@@ -1,70 +1,87 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using System.Collections.Generic;
 using MAS2;
 
 public class Program
 {
     public static void Main(string[] args)
     {
-        const string filePath = "9606.protein.links.v10.5.txt";
+        // File paths
+        const string nvertsPath = "C:\\Users\\dub0074\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-nverts.txt";
+        const string simplicesPath = "C:\\Users\\dub0074\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-simplices.txt";
+        const string timesPath = "C:\\Users\\dub0074\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-times.txt";
 
-        if (!File.Exists(filePath))
+        // Check files exist
+        if (!File.Exists(nvertsPath) || !File.Exists(simplicesPath) || !File.Exists(timesPath))
         {
-            Console.WriteLine($"Error: The data file was not found at '{filePath}'.");
-            Console.WriteLine("Please ensure the file is in the same directory as the executable.");
+            Console.WriteLine("Error: One or more data files were not found.");
+            Console.WriteLine($"Checked: {nvertsPath}, {simplicesPath}, {timesPath}");
             return;
         }
 
-        // Construct the sparse matrix from the protein links file.
-        // The value parser s => int.Parse(s) converts the score string to an integer.
-        var matrix = DokSparseMatrix<int>.FromFile(filePath, s => int.Parse(s));
+        // Load temporal cliques
+        var loader = new TemporalNetworkLoader(nvertsPath, simplicesPath, timesPath);
+        var yearToCliques = loader.YearToCliques;
 
-        var analyzer = new Analyzer<int>(matrix);
-
-        // --- Degree Analysis ---
-        Console.WriteLine("\n--- Degree Analysis ---");
-        var (degrees, degreeTime) = analyzer.GetDegrees();
-        Console.WriteLine($"Computation Time: {degreeTime.TotalMilliseconds:F2} ms");
-
-        var (avgDegree, maxDegree) = analyzer.GetAverageAndMaximumDegree(degrees);
-        Console.WriteLine($"Average Degree: {avgDegree:F2}");
-        Console.WriteLine($"Maximum Degree: {maxDegree}");
-
-        var degreeDistribution = analyzer.GetDegreeDistribution(degrees);
-        Console.WriteLine("\nDegree Distribution (Log-Log Scale):");
-        // Displaying a small sample of the distribution for brevity
-        foreach (var entry in degreeDistribution.OrderBy(d => d.Key).Take(10))
+        // Print summary
+        Console.WriteLine("Loaded clique network by year:");
+        foreach (var kvp in yearToCliques.OrderBy(kvp => kvp.Key))
         {
-            if (entry.Key > 0 && entry.Value > 0)
-            {
-                Console.WriteLine($"Log(Degree {entry.Key}): {Math.Log(entry.Key):F2}, Log(Count {entry.Value}): {Math.Log(entry.Value):F2}");
-            }
+            Console.WriteLine($"Year {kvp.Key}: {kvp.Value.Count} cliques");
         }
 
-        // --- Clustering Effect Analysis ---
-        Console.WriteLine("\n--- Clustering Effect Analysis ---");
-        var (clusteringCoefficients, clusteringTime) = analyzer.GetClusteringCoefficients(degrees);
-        Console.WriteLine($"Computation Time: {clusteringTime.TotalMilliseconds:F2} ms");
-
-        var clusteringDistribution = analyzer.GetClusteringDistribution(degrees, clusteringCoefficients);
-        Console.WriteLine("\nClustering Distribution (Degree x CC, Log-Log Scale):");
-        // Displaying a small sample
-        foreach (var entry in clusteringDistribution.OrderBy(d => d.Key).Take(10))
+        // --- Analysis per year ---
+        Console.WriteLine("\nYearly Network Analysis:");
+        foreach (var kvp in yearToCliques.OrderBy(kvp => kvp.Key))
         {
-            if (entry.Key > 0 && entry.Value > 0)
+            int year = kvp.Key;
+            var cliques = kvp.Value;
+            // Build node index mapping
+            var allNodeIds = cliques.SelectMany(c => c.NodeIds).Distinct().OrderBy(id => id).ToList();
+            var nodeIdToIndex = allNodeIds.Select((id, idx) => new { id, idx }).ToDictionary(x => x.id, x => x.idx);
+            int nodeCount = allNodeIds.Count;
+            var matrix = new DokSparseMatrix<int>(nodeCount, nodeCount);
+
+            // Build weighted adjacency matrix
+            foreach (var clique in cliques)
             {
-                Console.WriteLine($"Log(Degree {entry.Key}): {Math.Log(entry.Key):F2}, Log(Avg CC {entry.Value:F4}): {Math.Log(entry.Value):F2}");
+                var ids = clique.NodeIds;
+                for (int i = 0; i < ids.Count; i++)
+                {
+                    for (int j = i + 1; j < ids.Count; j++)
+                    {
+                        int idx1 = nodeIdToIndex[ids[i]];
+                        int idx2 = nodeIdToIndex[ids[j]];
+                        matrix[idx1, idx2] = matrix[idx1, idx2] + 1;
+                        matrix[idx2, idx1] = matrix[idx2, idx1] + 1;
+                    }
+                }
             }
+
+            var analyzer = new Analyzer<int>(matrix);
+            var (degrees, _) = analyzer.GetDegrees();
+            var (avgDegree, _) = analyzer.GetAverageAndMaximumDegree(degrees);
+
+            // Weighted degree: sum of edge weights for each node
+            var weightedDegrees = new int[nodeCount];
+            for (int i = 0; i < nodeCount; i++)
+            {
+                int sum = 0;
+                for (int j = 0; j < nodeCount; j++)
+                {
+                    if (i != j)
+                        sum += matrix[i, j];
+                }
+                weightedDegrees[i] = sum;
+            }
+            double avgWeightedDegree = weightedDegrees.Average();
+
+            var (clusteringCoefficients, _) = analyzer.GetClusteringCoefficients(degrees);
+            double avgClustering = clusteringCoefficients.Average();
+
+            Console.WriteLine($"Year {year}: Avg Degree = {avgDegree:F2}, Avg Weighted Degree = {avgWeightedDegree:F2}, Avg Clustering Coefficient = {avgClustering:F4}");
         }
-
-        // --- Common Neighbors Analysis ---
-        Console.WriteLine("\n--- Common Neighbors Analysis ---");
-        var (commonNeighborsMatrix, commonNeighborsTime) = analyzer.GetCommonNeighbors();
-        Console.WriteLine($"Computation Time: {commonNeighborsTime.TotalSeconds:F2} seconds");
-
-        var (avgCommonNeighbors, maxCommonNeighbors) = analyzer.GetAverageAndMaximumCommonNeighbors(commonNeighborsMatrix);
-        Console.WriteLine($"\nAverage Number of Common Neighbors: {avgCommonNeighbors:F2}");
-        Console.WriteLine($"Maximum Number of Common Neighbors: {maxCommonNeighbors}");
     }
 }
