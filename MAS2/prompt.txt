@@ -1,0 +1,21 @@
+nverts is txt that on each line has number of simplices in clique. Times has year per row first row in nvert corresponds to first row in times.
+
+For example nverts looks like this:
+2
+3
+
+and simplices look like this
+1
+2
+3
+8
+9
+
+and times look like this:
+2018
+2019
+
+In total we will have two cliques, first one will have two members with ID-> 1,2 it will be for year 2018 and second clique will have ids with -> 3,8,9 it will be for year 2019, each year has its own network
+
+Files are here 
+
