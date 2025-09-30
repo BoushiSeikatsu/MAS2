@@ -9,9 +9,9 @@ public class Program
     public static void Main(string[] args)
     {
         // File paths
-        const string nvertsPath = "C:\\Users\\dub0074\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-nverts.txt";
-        const string simplicesPath = "C:\\Users\\dub0074\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-simplices.txt";
-        const string timesPath = "C:\\Users\\dub0074\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-times.txt";
+        const string nvertsPath = "C:\\Users\\mduba\\Documents\\Python Scripts\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-nverts.txt";
+        const string simplicesPath = "C:\\Users\\mduba\\Documents\\Python Scripts\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-simplices.txt";
+        const string timesPath = "C:\\Users\\mduba\\Documents\\Python Scripts\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-times.txt";
 
         // Check files exist
         if (!File.Exists(nvertsPath) || !File.Exists(simplicesPath) || !File.Exists(timesPath))
@@ -34,7 +34,7 @@ public class Program
 
         // --- Analysis per year ---
         Console.WriteLine("\nYearly Network Analysis:");
-        foreach (var kvp in yearToCliques.OrderBy(kvp => kvp.Key))
+        /*foreach (var kvp in yearToCliques.OrderBy(kvp => kvp.Key))
         {
             int year = kvp.Key;
             var cliques = kvp.Value;
@@ -81,7 +81,39 @@ public class Program
             var (clusteringCoefficients, _) = analyzer.GetClusteringCoefficients(degrees);
             double avgClustering = clusteringCoefficients.Average();
 
+            // --- Find clique with highest average edge weight ---
+            var cliquesAsIndices = cliques.Select(c => c.NodeIds.Select(id => nodeIdToIndex[id]).ToList()).ToList();
+            var (bestCliqueIndices, bestAvgWeight) = analyzer.FindCliqueWithHighestAverageEdgeWeight(cliquesAsIndices);
+            var bestCliqueNodeIds = bestCliqueIndices?.Select(idx => allNodeIds[idx]).ToList() ?? new List<int>();
             Console.WriteLine($"Year {year}: Avg Degree = {avgDegree:F2}, Avg Weighted Degree = {avgWeightedDegree:F2}, Avg Clustering Coefficient = {avgClustering:F4}");
+            Console.WriteLine($"  Clique with highest average edge weight: [{string.Join(", ", bestCliqueNodeIds)}], Avg Edge Weight = {bestAvgWeight:F4}");
+        }*/
+
+        // --- Global analysis across all years ---
+        var allCliques = yearToCliques.SelectMany(kvp => kvp.Value).ToList();
+        var globalNodeIds = allCliques.SelectMany(c => c.NodeIds).Distinct().OrderBy(id => id).ToList();
+        var globalNodeIdToIndex = globalNodeIds.Select((id, idx) => new { id, idx }).ToDictionary(x => x.id, x => x.idx);
+        int globalNodeCount = globalNodeIds.Count;
+        var globalMatrix = new DokSparseMatrix<int>(globalNodeCount, globalNodeCount);
+        foreach (var clique in allCliques)
+        {
+            var ids = clique.NodeIds;
+            for (int i = 0; i < ids.Count; i++)
+            {
+                for (int j = i + 1; j < ids.Count; j++)
+                {
+                    int idx1 = globalNodeIdToIndex[ids[i]];
+                    int idx2 = globalNodeIdToIndex[ids[j]];
+                    globalMatrix[idx1, idx2] = globalMatrix[idx1, idx2] + 1;
+                    globalMatrix[idx2, idx1] = globalMatrix[idx2, idx1] + 1;
+                }
+            }
         }
+        var globalAnalyzer = new Analyzer<int>(globalMatrix);
+        var allCliquesAsIndices = allCliques.Select(c => c.NodeIds.Select(id => globalNodeIdToIndex[id]).ToList()).ToList();
+        var (globalBestCliqueIndices, globalBestAvgWeight) = globalAnalyzer.FindCliqueWithHighestAverageEdgeWeight(allCliquesAsIndices);
+        var globalBestCliqueNodeIds = globalBestCliqueIndices?.Select(idx => globalNodeIds[idx]).ToList() ?? new List<int>();
+        Console.WriteLine("\nGlobal analysis across all years:");
+        Console.WriteLine($"  Clique with highest average edge weight: [{string.Join(", ", globalBestCliqueNodeIds)}], Avg Edge Weight = {globalBestAvgWeight:F4}");
     }
 }

@@ -174,5 +174,39 @@ namespace MAS2
             }
             return pairCount == 0 ? (0, 0) : ((double)sum / pairCount, max);
         }
+
+        /// <summary>
+        /// Finds the clique (simplex) with the highest average edge weight.
+        /// Each clique is represented as a list of node indices (matrix indices).
+        /// Returns the clique and its average edge weight.
+        /// </summary>
+        public (List<int> clique, double averageWeight) FindCliqueWithHighestAverageEdgeWeight(List<List<int>> cliques)
+        {
+            List<int> bestClique = null;
+            double bestAverage = double.MinValue;
+            foreach (var clique in cliques)
+            {
+                int pairCount = 0;
+                double sumWeight = 0.0;
+                for (int i = 0; i < clique.Count; i++)
+                {
+                    for (int j = i + 1; j < clique.Count; j++)
+                    {
+                        // Only consider pairs (i, j) where i < j
+                        var weightObj = _matrix[clique[i], clique[j]];
+                        double weight = Convert.ToDouble(weightObj);
+                        sumWeight += weight;
+                        pairCount++;
+                    }
+                }
+                double avg = pairCount > 0 ? sumWeight / pairCount : 0.0;
+                if (avg > bestAverage)
+                {
+                    bestAverage = avg;
+                    bestClique = clique;
+                }
+            }
+            return (bestClique, bestAverage);
+        }
     }
 }
