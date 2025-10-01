@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Collections.Concurrent;
@@ -85,18 +84,13 @@ namespace MAS2
         {
             var stopwatch = Stopwatch.StartNew();
             var degrees = new int[_nodeCount];
-            Parallel.For(0, _nodeCount, i =>
+            // Efficiently count degrees by iterating only over non-zero entries
+            // Each non-zero entry (i, j) means node i has an edge to j
+            // For undirected graphs, both (i, j) and (j, i) are present
+            foreach (var kvp in _matrix.GetType().GetField("_elements", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(_matrix) as Dictionary<MatrixKey, T>)
             {
-                int degree = 0;
-                for (int j = 0; j < _nodeCount; j++)
-                {
-                    if (!_matrix[i, j].Equals(default(T)))
-                    {
-                        degree++;
-                    }
-                }
-                degrees[i] = degree;
-            });
+                degrees[kvp.Key.Row]++;
+            }
             stopwatch.Stop();
             return (degrees, stopwatch.Elapsed);
         }
@@ -136,6 +130,14 @@ namespace MAS2
         {
             var stopwatch = Stopwatch.StartNew();
             var coefficients = new double[_nodeCount];
+            // Precompute neighbors for each node using sparse matrix
+            var neighbors = new List<int>[_nodeCount];
+            for (int i = 0; i < _nodeCount; i++)
+                neighbors[i] = new List<int>();
+            foreach (var kvp in _matrix.GetType().GetField("_elements", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(_matrix) as Dictionary<MatrixKey, T>)
+            {
+                neighbors[kvp.Key.Row].Add(kvp.Key.Column);
+            }
             Parallel.For(0, _nodeCount, i =>
             {
                 if (degrees[i] < 2)
@@ -143,22 +145,14 @@ namespace MAS2
                     coefficients[i] = 0.0;
                     return;
                 }
-
-                var neighbors = new List<int>();
-                for (int j = 0; j < _nodeCount; j++)
-                {
-                    if (!_matrix[i, j].Equals(default(T)))
-                    {
-                        neighbors.Add(j);
-                    }
-                }
-
                 int connectedNeighbors = 0;
-                for (int j = 0; j < neighbors.Count; j++)
+                var neigh = neighbors[i];
+                for (int j = 0; j < neigh.Count; j++)
                 {
-                    for (int k = j + 1; k < neighbors.Count; k++)
+                    for (int k = j + 1; k < neigh.Count; k++)
                     {
-                        if (!_matrix[neighbors[j], neighbors[k]].Equals(default(T)))
+                        // Check if neighbors[j] and neighbors[k] are connected
+                        if (neighbors[neigh[j]].Contains(neigh[k]))
                         {
                             connectedNeighbors++;
                         }
@@ -182,46 +176,60 @@ namespace MAS2
             return degreeGroups.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.sum / kvp.Value.count);
         }
 
-        /// <summary>
-        /// Computes the number of common neighbors for each pair of nodes in parallel.
-        /// Complexity: O(N^3) because it iterates through all pairs of nodes (i, j) and then checks every other node k.
-        /// </summary>
-        /// <returns>A tuple containing a 2D array of common neighbors and the computation time.</returns>
-        public (int[,] commonNeighbors, TimeSpan duration) GetCommonNeighbors()
+
+        public (DokSparseMatrix<int> commonNeighbors, TimeSpan duration) GetCommonNeighbors()
         {
             var stopwatch = Stopwatch.StartNew();
-            var commonNeighbors = new int[_nodeCount, _nodeCount];
-            Parallel.For(0, _nodeCount, i =>
+            var commonNeighbors = new DokSparseMatrix<int>(_nodeCount, _nodeCount);
+            // Precompute neighbor sets for each node
+            var neighborSets = new HashSet<int>[_nodeCount];
+            for (int i = 0; i < _nodeCount; i++)
+                neighborSets[i] = new HashSet<int>();
+            var elements = _matrix.GetType().GetField("_elements", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(_matrix) as Dictionary<MatrixKey, T>;
+            foreach (var kvp in elements)
             {
-                for (int j = i + 1; j < _nodeCount; j++)
+                neighborSets[kvp.Key.Row].Add(kvp.Key.Column);
+            }
+            // Only compute for pairs that are connected by an edge
+            Parallel.ForEach(elements, kvp =>
+            {
+                int i = kvp.Key.Row;
+                int j = kvp.Key.Column;
+                if (i < j) // Only compute once per undirected pair
                 {
-                    int count = 0;
-                    for (int k = 0; k < _nodeCount; k++)
+                    int count = neighborSets[i].Intersect(neighborSets[j]).Count();
+                    if (count > 0)
                     {
-                        if (!_matrix[i, k].Equals(default(T)) && !_matrix[j, k].Equals(default(T)))
+                        // Thread-safe: accumulate in local dictionary, then merge after
+                        lock (commonNeighbors)
                         {
-                            count++;
+                            commonNeighbors.SetValue(i, j, count);
+                            commonNeighbors.SetValue(j, i, count);
                         }
                     }
-                    commonNeighbors[i, j] = count;
-                    commonNeighbors[j, i] = count;
                 }
             });
             stopwatch.Stop();
             return (commonNeighbors, stopwatch.Elapsed);
         }
 
-        public (double average, int max) GetAverageAndMaximumCommonNeighbors(int[,] commonNeighbors)
+        public (double average, int max) GetAverageAndMaximumCommonNeighbors(DokSparseMatrix<int> commonNeighbors)
         {
             long sum = 0;
             int max = 0;
             int pairCount = 0;
-            for (int i = 0; i < _nodeCount; i++)
+            // Access the internal dictionary of non-zero entries
+            var elements = commonNeighbors.GetType().GetField("_elements", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(commonNeighbors) as Dictionary<MatrixKey, int>;
+            foreach (var kvp in elements)
             {
-                for (int j = i + 1; j < _nodeCount; j++)
+                int i = kvp.Key.Row;
+                int j = kvp.Key.Column;
+                // Only count each pair once (i < j)
+                if (i < j)
                 {
-                    sum += commonNeighbors[i, j];
-                    if (commonNeighbors[i, j] > max) max = commonNeighbors[i, j];
+                    int value = kvp.Value;
+                    sum += value;
+                    if (value > max) max = value;
                     pairCount++;
                 }
             }
