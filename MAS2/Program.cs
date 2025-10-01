@@ -9,9 +9,9 @@ public class Program
     public static void Main(string[] args)
     {
         // File paths
-        const string nvertsPath = "C:\\Users\\mduba\\Documents\\Python Scripts\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-nverts.txt";
-        const string simplicesPath = "C:\\Users\\mduba\\Documents\\Python Scripts\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-simplices.txt";
-        const string timesPath = "C:\\Users\\mduba\\Documents\\Python Scripts\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-times.txt";
+        const string nvertsPath = "C:\\Users\\dub0074\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-nverts.txt";
+        const string simplicesPath = "C:\\Users\\dub0074\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-simplices.txt";
+        const string timesPath = "C:\\Users\\dub0074\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-times.txt";
 
         // Check files exist
         if (!File.Exists(nvertsPath) || !File.Exists(simplicesPath) || !File.Exists(timesPath))
