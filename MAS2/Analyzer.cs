@@ -1,10 +1,14 @@
-﻿using MAS2;
+﻿
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Threading.Tasks;
+        
+
+
+
 
 namespace MAS2
 {
@@ -22,7 +26,56 @@ namespace MAS2
             _matrix = matrix;
             _nodeCount = matrix.Rows;
         }
+        public List<DokSparseMatrix<int>> CrossValidation(int n)
+        {
+            if (typeof(T) != typeof(int))
+                throw new InvalidOperationException("CrossValidation only supports DokSparseMatrix<int>.");
 
+            var matrix = _matrix as DokSparseMatrix<int>;
+            if (matrix == null)
+                throw new InvalidOperationException("Underlying matrix is not of type int.");
+
+
+
+
+            // Collect all unique edges (i < j for undirected)
+            var edges = new List<(int, int)>();
+            for (int i = 0; i < matrix.Rows; i++)
+            {
+                for (int j = i + 1; j < matrix.Columns; j++)
+                {
+                    if (matrix[i, j] != 0)
+                        edges.Add((i, j));
+                }
+            }
+
+            int totalEdges = edges.Count;
+            int edgesPerFold = totalEdges / n;
+            var random = new Random();
+            var shuffledEdges = edges.OrderBy(x => random.Next()).ToList();
+
+            var folds = new List<DokSparseMatrix<int>>();
+            int edgeIndex = 0;
+            for (int fold = 0; fold < n; fold++)
+            {
+                // Clone the matrix
+                var clone = new DokSparseMatrix<int>(matrix.Rows, matrix.Columns);
+                for (int i = 0; i < matrix.Rows; i++)
+                    for (int j = 0; j < matrix.Columns; j++)
+                        clone[i, j] = matrix[i, j];
+
+                // Remove edges for this fold
+                int removeCount = (fold == n - 1) ? totalEdges - edgeIndex : edgesPerFold;
+                for (int k = 0; k < removeCount && edgeIndex < totalEdges; k++, edgeIndex++)
+                {
+                    var (u, v) = shuffledEdges[edgeIndex];
+                    clone[u, v] = 0;
+                    clone[v, u] = 0;
+                }
+                folds.Add(clone);
+            }
+            return folds;
+        }
         /// <summary>
         /// Computes the degree of each node in parallel.
         /// Complexity: O(N^2) where N is the number of nodes, as it checks every potential edge.

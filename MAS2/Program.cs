@@ -4,9 +4,11 @@ using System.Linq;
 using System.Collections.Generic;
 using MAS2;
 
+/*Dodělat inkrementálně rok po roku*/
+
 public class Program
 {
-    public static void Main(string[] args)
+   /* public static void Main(string[] args)
     {
         // File paths
         const string nvertsPath = "C:\\Users\\dub0074\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-nverts.txt";
@@ -87,7 +89,7 @@ public class Program
             var bestCliqueNodeIds = bestCliqueIndices?.Select(idx => allNodeIds[idx]).ToList() ?? new List<int>();
             Console.WriteLine($"Year {year}: Avg Degree = {avgDegree:F2}, Avg Weighted Degree = {avgWeightedDegree:F2}, Avg Clustering Coefficient = {avgClustering:F4}");
             Console.WriteLine($"  Clique with highest average edge weight: [{string.Join(", ", bestCliqueNodeIds)}], Avg Edge Weight = {bestAvgWeight:F4}");
-        }*/
+        }
 
         // --- Global analysis across all years ---
         var allCliques = yearToCliques.SelectMany(kvp => kvp.Value).ToList();
@@ -115,5 +117,5 @@ public class Program
         var globalBestCliqueNodeIds = globalBestCliqueIndices?.Select(idx => globalNodeIds[idx]).ToList() ?? new List<int>();
         Console.WriteLine("\nGlobal analysis across all years:");
         Console.WriteLine($"  Clique with highest average edge weight: [{string.Join(", ", globalBestCliqueNodeIds)}], Avg Edge Weight = {globalBestAvgWeight:F4}");
-    }
+    }*/
 }

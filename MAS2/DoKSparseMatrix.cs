@@ -42,17 +42,15 @@ namespace MAS2
             // This builds a map from string identifiers to integer indices.
             using (var reader = new StreamReader(filePath))
             {
-                reader.ReadLine(); // Skip the header line
-
                 string line;
                 while ((line = reader.ReadLine()) != null)
                 {
                     var parts = line.Split(delimiter);
-                    if (parts.Length < 3) continue; // Skip malformed lines
+                    if (parts.Length < 2) continue; // Skip malformed lines
 
                     var p1 = parts[0];
                     var p2 = parts[1];
-                    var score = parts[2];
+                    var score = parts.Length > 2 ? parts[2] : "1"; // Default score if missing
 
                     if (!nodeMap.ContainsKey(p1)) nodeMap.Add(p1, nextIndex++);
                     if (!nodeMap.ContainsKey(p2)) nodeMap.Add(p2, nextIndex++);
