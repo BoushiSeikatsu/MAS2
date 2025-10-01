@@ -6,6 +6,9 @@ using MAS2;
 
 /*Dodělat inkrementálně rok po roku*/
 
+ /*
+  * Je třeba vykreslit grafy pro všechny 3 sítě.
+  */
 public class Program
 {
     
