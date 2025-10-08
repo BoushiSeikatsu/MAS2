@@ -62,7 +62,15 @@ public class Program
             var (clusteringCoefficients, clusteringTime) = analyzer.GetClusteringCoefficients(degrees);
             Console.WriteLine($"Computation Time: {clusteringTime.TotalMilliseconds:F2} ms");
 
-            var clusteringDistribution = analyzer.GetClusteringDistribution(degrees, clusteringCoefficients);
+            // Average clustering coefficient (over all nodes)
+            double avgClustering = 0.0;
+            if (clusteringCoefficients != null && clusteringCoefficients.Length > 0)
+            {
+                avgClustering = clusteringCoefficients.Average();
+            }
+            Console.WriteLine($"Average Clustering Coefficient: {avgClustering:F4}");
+
+            var clusteringDistribution = analyzer.GetClusteringDistribution(degrees, clusteringCoefficients ?? Array.Empty<double>());
 
             // Save plots with network label in filename
             try
