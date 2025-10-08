@@ -14,65 +14,92 @@ public class Program
     
     public static void Main(string[] args)
     {
-        const string filePath = "com-youtube.ungraph.txt";
-
-        if (!File.Exists(filePath))
+        // List of networks to process: tuple of (file path, network label)
+        var networks = new List<(string path, string label, char sep)>
         {
-            Console.WriteLine($"Error: The data file was not found at '{filePath}'.");
-            Console.WriteLine("Please ensure the file is in the same directory as the executable.");
-            return;
-        }
+            ("com-youtube.ungraph.txt", "com-youtube", '\t'),
+            ("9606.protein.links.v10.5.txt", "9606-protein", (char)32),
+            ("socfb-Penn94.mtx", "socfb-Penn94", (char)32)
+        };
 
-        // Construct the sparse matrix from the protein links file.
-        // The value parser s => int.Parse(s) converts the score string to an integer.
-        var matrix = DokSparseMatrix<int>.FromFile(filePath, s => int.Parse(s),'\t');
-        //Console.WriteLine(matrix.ToString());
-        var analyzer = new Analyzer<int>(matrix);
-
-        // --- Degree Analysis ---
-        Console.WriteLine("\n--- Degree Analysis ---");
-        var (degrees, degreeTime) = analyzer.GetDegrees();
-        Console.WriteLine($"Computation Time: {degreeTime.TotalMilliseconds:F2} ms");
-
-        var (avgDegree, maxDegree) = analyzer.GetAverageAndMaximumDegree(degrees);
-        Console.WriteLine($"Average Degree: {avgDegree:F2}");
-        Console.WriteLine($"Maximum Degree: {maxDegree}");
-
-        var degreeDistribution = analyzer.GetDegreeDistribution(degrees);
-        Console.WriteLine("\nDegree Distribution (Log-Log Scale):");
-        // Displaying a small sample of the distribution for brevity
-        foreach (var entry in degreeDistribution.OrderBy(d => d.Key).Take(10))
+        foreach (var (path, label, sep) in networks)
         {
-            if (entry.Key > 0 && entry.Value > 0)
+            Console.WriteLine($"\n=== Processing network: {label} (file: {path}) ===");
+
+            if (!File.Exists(path))
             {
-                Console.WriteLine($"Log(Degree {entry.Key}): {Math.Log(entry.Key):F2}, Log(Count {entry.Value}): {Math.Log(entry.Value):F2}");
+                Console.WriteLine($"Warning: file not found: {path} — skipping {label}.");
+                continue;
             }
-        }
 
-        // --- Clustering Effect Analysis ---
-        Console.WriteLine("\n--- Clustering Effect Analysis ---");
-        var (clusteringCoefficients, clusteringTime) = analyzer.GetClusteringCoefficients(degrees);
-        Console.WriteLine($"Computation Time: {clusteringTime.TotalMilliseconds:F2} ms");
-
-        var clusteringDistribution = analyzer.GetClusteringDistribution(degrees, clusteringCoefficients);
-        Console.WriteLine("\nClustering Distribution (Degree x CC, Log-Log Scale):");
-        // Displaying a small sample
-        foreach (var entry in clusteringDistribution.OrderBy(d => d.Key).Take(10))
-        {
-            if (entry.Key > 0 && entry.Value > 0)
+            // Attempt to load matrix. Use tab as default separator; adjust per file if needed.
+            DokSparseMatrix<int> matrix;
+            try
             {
-                Console.WriteLine($"Log(Degree {entry.Key}): {Math.Log(entry.Key):F2}, Log(Avg CC {entry.Value:F4}): {Math.Log(entry.Value):F2}");
+                matrix = DokSparseMatrix<int>.FromFile(path, s => int.Parse(s), sep);
             }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to load matrix from {path}: {ex.Message}");
+                continue;
+            }
+
+            var analyzer = new Analyzer<int>(matrix);
+
+            // Degree analysis
+            Console.WriteLine("--- Degree Analysis ---");
+            var (degrees, degreeTime) = analyzer.GetDegrees();
+            Console.WriteLine($"Computation Time: {degreeTime.TotalMilliseconds:F2} ms");
+
+            var (avgDegree, maxDegree) = analyzer.GetAverageAndMaximumDegree(degrees);
+            Console.WriteLine($"Average Degree: {avgDegree:F2}");
+            Console.WriteLine($"Maximum Degree: {maxDegree}");
+
+            var degreeDistribution = analyzer.GetDegreeDistribution(degrees);
+
+            // Clustering analysis
+            Console.WriteLine("--- Clustering Effect Analysis ---");
+            var (clusteringCoefficients, clusteringTime) = analyzer.GetClusteringCoefficients(degrees);
+            Console.WriteLine($"Computation Time: {clusteringTime.TotalMilliseconds:F2} ms");
+
+            var clusteringDistribution = analyzer.GetClusteringDistribution(degrees, clusteringCoefficients);
+
+            // Save plots with network label in filename
+            try
+            {
+                var degXs = degreeDistribution.Keys.OrderBy(k => k).Select(k => (double)k).ToArray();
+                var degYs = degreeDistribution.Keys.OrderBy(k => k).Select(k => (double)degreeDistribution[k]).ToArray();
+                var degFile = $"{SanitizeFileName(label)}_degree.png";
+                ChartGenerator.SaveDistributionPng(degFile, degXs, degYs, $"{label} - Degree Distribution (log-log)", logX: true, logY: true);
+
+                var cluXs = clusteringDistribution.Keys.OrderBy(k => k).Select(k => (double)k).ToArray();
+                var cluYs = clusteringDistribution.Keys.OrderBy(k => k).Select(k => (double)clusteringDistribution[k]).ToArray();
+                var cluFile = $"{SanitizeFileName(label)}_clusteringCoefficient.png";
+                ChartGenerator.SaveDistributionPng(cluFile, cluXs, cluYs, $"{label} - Clustering vs Degree (log-log)", logX: true, logY: true);
+
+                Console.WriteLine($"Saved charts: {degFile}, {cluFile}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to save charts for {label}: {ex.Message}");
+            }
+
+            // Common neighbors (kept for informational output)
+            Console.WriteLine("--- Common Neighbors Analysis ---");
+            var (commonNeighborsMatrix, commonNeighborsTime) = analyzer.GetCommonNeighbors();
+            Console.WriteLine($"Computation Time: {commonNeighborsTime.TotalSeconds:F2} seconds");
+            var (avgCommonNeighbors, maxCommonNeighbors) = analyzer.GetAverageAndMaximumCommonNeighbors(commonNeighborsMatrix);
+            Console.WriteLine($"Average Number of Common Neighbors: {avgCommonNeighbors:F2}");
+            Console.WriteLine($"Maximum Number of Common Neighbors: {maxCommonNeighbors}");
         }
+    }
 
-        // --- Common Neighbors Analysis ---
-        Console.WriteLine("\n--- Common Neighbors Analysis ---");
-        var (commonNeighborsMatrix, commonNeighborsTime) = analyzer.GetCommonNeighbors();
-        Console.WriteLine($"Computation Time: {commonNeighborsTime.TotalSeconds:F2} seconds");
-
-        var (avgCommonNeighbors, maxCommonNeighbors) = analyzer.GetAverageAndMaximumCommonNeighbors(commonNeighborsMatrix);
-        Console.WriteLine($"\nAverage Number of Common Neighbors: {avgCommonNeighbors:F2}");
-        Console.WriteLine($"Maximum Number of Common Neighbors: {maxCommonNeighbors}");
+    private static string SanitizeFileName(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return "network";
+        var invalid = Path.GetInvalidFileNameChars();
+        var cleaned = new string(input.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+        return cleaned.Replace(' ', '_');
     }
 
    /* public static void Main(string[] args)
