@@ -12,7 +12,7 @@ using MAS2;
 public class Program
 {
     
-    public static void Main(string[] args)
+    /*public static void Main(string[] args)
     {
         // List of networks to process: tuple of (file path, network label)
         var networks = new List<(string path, string label, char sep)>
@@ -100,7 +100,7 @@ public class Program
             Console.WriteLine($"Average Number of Common Neighbors: {avgCommonNeighbors:F2}");
             Console.WriteLine($"Maximum Number of Common Neighbors: {maxCommonNeighbors}");
         }
-    }
+    }*/
 
     private static string SanitizeFileName(string input)
     {
