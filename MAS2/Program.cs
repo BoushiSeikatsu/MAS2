@@ -110,7 +110,7 @@ public class Program
         return cleaned.Replace(' ', '_');
     }
 
-   /* public static void Main(string[] args)
+    /*public static void Main(string[] args)
     {
         // File paths
         const string nvertsPath = "C:\\Users\\dub0074\\MAS2\\MAS2\\Cviko2\\coauth-DBLP-nverts.txt";
@@ -138,7 +138,7 @@ public class Program
 
         // --- Analysis per year ---
         Console.WriteLine("\nYearly Network Analysis:");
-        /*foreach (var kvp in yearToCliques.OrderBy(kvp => kvp.Key))
+        foreach (var kvp in yearToCliques.OrderBy(kvp => kvp.Key))
         {
             int year = kvp.Key;
             var cliques = kvp.Value;
@@ -214,10 +214,25 @@ public class Program
             }
         }
         var globalAnalyzer = new Analyzer<int>(globalMatrix);
+        // --- Global network statistics ---
+        var (globalDegrees, globalDegreeTime) = globalAnalyzer.GetDegrees();
+        var (globalAvgDegree, globalMaxDegree) = globalAnalyzer.GetAverageAndMaximumDegree(globalDegrees);
+        var globalDegreeDistribution = globalAnalyzer.GetDegreeDistribution(globalDegrees);
+        var (globalClusteringCoefficients, globalClusteringTime) = globalAnalyzer.GetClusteringCoefficients(globalDegrees);
+        double globalAvgClustering = globalClusteringCoefficients.Average();
+        var globalClusteringDistribution = globalAnalyzer.GetClusteringDistribution(globalDegrees, globalClusteringCoefficients);
+        var (globalCommonNeighborsMatrix, globalCommonNeighborsTime) = globalAnalyzer.GetCommonNeighbors();
+        var (globalAvgCommonNeighbors, globalMaxCommonNeighbors) = globalAnalyzer.GetAverageAndMaximumCommonNeighbors(globalCommonNeighborsMatrix);
+        // --- Existing best clique analysis ---
         var allCliquesAsIndices = allCliques.Select(c => c.NodeIds.Select(id => globalNodeIdToIndex[id]).ToList()).ToList();
         var (globalBestCliqueIndices, globalBestAvgWeight) = globalAnalyzer.FindCliqueWithHighestAverageEdgeWeight(allCliquesAsIndices);
         var globalBestCliqueNodeIds = globalBestCliqueIndices?.Select(idx => globalNodeIds[idx]).ToList() ?? new List<int>();
         Console.WriteLine("\nGlobal analysis across all years:");
+        Console.WriteLine($"  Average Degree: {globalAvgDegree:F2}");
+        Console.WriteLine($"  Maximum Degree: {globalMaxDegree}");
+        Console.WriteLine($"  Average Clustering Coefficient: {globalAvgClustering:F4}");
+        Console.WriteLine($"  Average Number of Common Neighbors: {globalAvgCommonNeighbors:F2}");
+        Console.WriteLine($"  Maximum Number of Common Neighbors: {globalMaxCommonNeighbors}");
         Console.WriteLine($"  Clique with highest average edge weight: [{string.Join(", ", globalBestCliqueNodeIds)}], Avg Edge Weight = {globalBestAvgWeight:F4}");
     }*/
 }
