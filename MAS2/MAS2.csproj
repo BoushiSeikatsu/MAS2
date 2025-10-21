@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="ScottPlot" Version="5.0.56" />
+    <PackageReference Include="System.Drawing.Common" Version="7.0.0" />
   </ItemGroup>
 
 </Project>

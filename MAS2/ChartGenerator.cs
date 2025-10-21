@@ -1,6 +1,10 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Drawing;
 using ScottPlot;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 
 public static class ChartGenerator
 {
@@ -37,6 +41,146 @@ public static class ChartGenerator
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".");
 
         // Save with requested pixel size
+        plt.SavePng(path, width, height);
+    }
+
+    // Saves a bar chart with algorithm names on X axis (rotated) and F1 scores on Y axis
+    public static void SaveBarChart(string path, string[] labels, double[] values, string title, int width = 1200, int height = 800)
+    {
+        if (labels == null) throw new ArgumentNullException(nameof(labels));
+        if (values == null) throw new ArgumentNullException(nameof(values));
+        if (labels.Length != values.Length) throw new ArgumentException("labels and values must have the same length");
+
+        // Ensure directory exists
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".");
+
+        using (var bmp = new Bitmap(width, height))
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.Clear(System.Drawing.Color.White);
+
+            int marginLeft = 80;
+            int marginRight = 40;
+            int marginTop = 60;
+            int marginBottom = 120; // leave room for rotated labels
+
+            int plotWidth = width - marginLeft - marginRight;
+            int plotHeight = height - marginTop - marginBottom;
+
+            // Draw title
+            using (var titleFont = new System.Drawing.Font("Segoe UI", 14, System.Drawing.FontStyle.Bold))
+            using (var axisFont = new System.Drawing.Font("Segoe UI", 10))
+            using (var labelFont = new System.Drawing.Font("Segoe UI", 9))
+            {
+                g.DrawString(title, titleFont, Brushes.Black, new RectangleF(marginLeft, 8, plotWidth, 30));
+
+                // Calculate bar positions
+                int n = values.Length;
+                if (n == 0)
+                {
+                    bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+                    return;
+                }
+
+                // Force Y axis range to [0,1]
+                double minVal = 0.0;
+                double maxVal = 1.0;
+                double valRange = 1.0;
+
+                int barGap = Math.Max(4, plotWidth / Math.Max(30, n * 5));
+                int barWidth = Math.Max(6, (plotWidth - (n + 1) * barGap) / Math.Max(1, n));
+
+                // Draw Y axis ticks and grid
+                int ticks = 5;
+                for (int t = 0; t <= ticks; t++)
+                {
+                    float y = marginTop + (float)(plotHeight - (plotHeight * t / (double)ticks));
+                    double val = minVal + (valRange * t / ticks);
+                    g.DrawLine(Pens.LightGray, marginLeft, y, marginLeft + plotWidth, y);
+                    g.DrawString(val.ToString("F2"), axisFont, Brushes.Black, new PointF(8, y - 8));
+                }
+
+                // Draw bars
+                for (int i = 0; i < n; i++)
+                {
+                    // Clamp values to [0,1] so chart stays within fixed Y range
+                    double raw = values[i];
+                    double v = Math.Max(0.0, Math.Min(1.0, raw));
+                    float x = marginLeft + barGap + i * (barWidth + barGap);
+                    float h = (float)((v - minVal) / valRange * plotHeight);
+                    var rect = new RectangleF(x, marginTop + plotHeight - h, barWidth, h);
+                    using (var brush = new SolidBrush(System.Drawing.Color.FromArgb(100, 149, 237))) // CornflowerBlue-like
+                        g.FillRectangle(brush, rect);
+                    g.DrawRectangle(Pens.DimGray, Rectangle.Round(rect));
+                }
+
+                // Draw X labels rotated 45 degrees
+                for (int i = 0; i < n; i++)
+                {
+                    float x = marginLeft + barGap + i * (barWidth + barGap) + barWidth / 2f;
+                    float y = marginTop + plotHeight + 6;
+                    var label = labels[i];
+                    // Save state
+                    var state = g.Save();
+                    // Translate to label position
+                    g.TranslateTransform(x, y);
+                    g.RotateTransform(45);
+                    var size = g.MeasureString(label, labelFont);
+                    g.DrawString(label, labelFont, Brushes.Black, -size.Width / 2f, 0);
+                    // Restore
+                    g.Restore(state);
+                }
+
+                // Y axis label
+                var yLabel = "F1 score";
+                var yState = g.Save();
+                g.TranslateTransform(16, marginTop + plotHeight / 2f);
+                g.RotateTransform(-90);
+                var ySize = g.MeasureString(yLabel, axisFont);
+                g.DrawString(yLabel, axisFont, Brushes.Black, -ySize.Width / 2f, 0);
+                g.Restore(yState);
+            }
+
+            bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        }
+    }
+
+    // Saves a multi-series line chart where each series has its own X (thresholds) and Y (F1) arrays
+    public static void SaveLineChart(string path, string[] seriesLabels, double[][] xsPerSeries, double[][] ysPerSeries, string title, int width = 1200, int height = 800)
+    {
+        if (seriesLabels == null) throw new ArgumentNullException(nameof(seriesLabels));
+        if (xsPerSeries == null) throw new ArgumentNullException(nameof(xsPerSeries));
+        if (ysPerSeries == null) throw new ArgumentNullException(nameof(ysPerSeries));
+        if (seriesLabels.Length != xsPerSeries.Length || seriesLabels.Length != ysPerSeries.Length)
+            throw new ArgumentException("seriesLabels, xsPerSeries and ysPerSeries must have the same length");
+
+        // Ensure directory exists
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".");
+
+        var plt = new ScottPlot.Plot();
+        for (int i = 0; i < seriesLabels.Length; i++)
+        {
+            var xs = xsPerSeries[i] ?? new double[0];
+            var ys = ysPerSeries[i] ?? new double[0];
+            var scatter = plt.Add.Scatter(xs, ys);
+            scatter.LegendText = seriesLabels[i];
+            scatter.MarkerSize = 4;
+            scatter.LineWidth = 2;
+        }
+
+        plt.Title(title);
+        plt.XLabel("threshold");
+        plt.YLabel("F1 score");
+        // Enable legend and position it Top-Right
+        try
+        {
+            plt.Legend.IsVisible = true;
+            plt.Legend.Alignment = ScottPlot.Alignment.UpperRight;
+        }
+        catch { /* some ScottPlot versions expose different API; ignore if unavailable */ }
+
+        // Save using the same API we used earlier
         plt.SavePng(path, width, height);
     }
 }
