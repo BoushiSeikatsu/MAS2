@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using MAS2;
 namespace MAS2
 {
-    public class Cviko4
+    /*public class Cviko4
     {
         public static void Main(string[] args)
         {
@@ -20,9 +20,9 @@ namespace MAS2
             double p = 0.5;
             var copyingModelMatrix = NetworkGenerator.GenerateCopyingModel(nodeCount, p);
             NetworkGenerator.SaveMatrixAsEdgeList(copyingModelMatrix, "copying_model_1500.txt");
-            var copyingModelMatrixIL = NetworkGenerator.GenerateCopyingModelWithInternalLinks(nodeCount, p, q);
+            var copyingModelMatrixIL = NetworkGenersator.GenerateCopyingModelWithInternalLinks(nodeCount, p, q);
             NetworkGenerator.SaveMatrixAsEdgeList(copyingModelMatrixIL, "copying_model_1500_with_internal_links.txt");
             Console.WriteLine("Networks generated and saved.");
         }
-    }
+    }*/
 }
