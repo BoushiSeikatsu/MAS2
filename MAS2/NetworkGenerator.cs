@@ -241,6 +241,93 @@ namespace MAS2
         }
 
         /// <summary>
+        /// Generates a network using the Barabási–Albert preferential attachment model.
+        /// </summary>
+        /// <param name="nodeCount">Total number of nodes in the network.</param>
+        /// <param name="m">Number of edges each new node attaches to existing nodes (must be &gt;=1 and &lt; nodeCount).</param>
+        /// <returns>DokSparseMatrix<int> representing the adjacency matrix (undirected).</returns>
+        public static DokSparseMatrix<int> GenerateBarabasiAlbert(int nodeCount, int m)
+        {
+            if (nodeCount < 2)
+                throw new ArgumentException("Network must have at least 2 nodes.");
+            if (m < 1 || m >= nodeCount)
+                throw new ArgumentException("Parameter m must be >= 1 and less than nodeCount.");
+
+            var matrix = new DokSparseMatrix<int>(nodeCount, nodeCount);
+            var rand = new Random();
+
+            // Start with an initial complete graph of m nodes (0..m-1)
+            for (int i = 0; i < m; i++)
+            {
+                for (int j = i + 1; j < m; j++)
+                {
+                    matrix[i, j] = 1;
+                    matrix[j, i] = 1;
+                }
+            }
+
+            // Degree array to maintain current degrees for preferential attachment
+            var degrees = new int[nodeCount];
+            for (int i = 0; i < m; i++)
+                degrees[i] = m - 1; // in the initial complete graph each node has degree m-1
+
+            // Add remaining nodes, each connecting to m existing nodes preferentially by degree
+            for (int newNode = m; newNode < nodeCount; newNode++)
+            {
+                var targets = new HashSet<int>();
+
+                // Ensure we attach to m distinct existing nodes (or fewer if not possible)
+                while (targets.Count < m && targets.Count < newNode)
+                {
+                    // Compute degree sum among existing nodes [0..newNode-1]
+                    int degreeSum = 0;
+                    for (int k = 0; k < newNode; k++)
+                        degreeSum += degrees[k];
+
+                    if (degreeSum == 0)
+                    {
+                        // fallback to uniform random selection if all degrees are zero
+                        int candidate = rand.Next(newNode);
+                        targets.Add(candidate);
+                        continue;
+                    }
+
+                    int r = rand.Next(degreeSum);
+                    int cum = 0;
+                    int selected = -1;
+                    for (int k = 0; k < newNode; k++)
+                    {
+                        cum += degrees[k];
+                        if (r < cum)
+                        {
+                            selected = k;
+                            break;
+                        }
+                    }
+
+                    if (selected == -1)
+                        selected = newNode - 1;
+
+                    targets.Add(selected);
+                }
+
+                // Create edges between newNode and chosen targets
+                foreach (var t in targets)
+                {
+                    if (matrix[newNode, t] == 0)
+                    {
+                        matrix[newNode, t] = 1;
+                        matrix[t, newNode] = 1;
+                        degrees[t]++;
+                        degrees[newNode]++;
+                    }
+                }
+            }
+
+            return matrix;
+        }
+
+        /// <summary>
         /// Saves a DokSparseMatrix<int> as an edge list to a file.
         /// </summary>
         /// <param name="matrix">The matrix to save.</param>
@@ -249,13 +336,17 @@ namespace MAS2
         {
             using (var writer = new StreamWriter(filePath))
             {
+                // Write CSV header: source,target,weight
+                writer.WriteLine("source,target,weight");
+
                 for (int i = 0; i < matrix.Rows; i++)
                 {
                     for (int j = i + 1; j < matrix.Columns; j++) // Only upper triangle for undirected
                     {
                         if (matrix[i, j] != 0)
                         {
-                            writer.WriteLine($"{i} {j} {matrix[i, j]}");
+                            // Write as CSV with comma separators
+                            writer.WriteLine($"{i},{j},{matrix[i, j]}");
                         }
                     }
                 }

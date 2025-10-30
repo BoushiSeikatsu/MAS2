@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using MAS2;
-
+//Potřeba je kouknout na ty metriky!
 namespace MAS2
 {
-    public class Cviko5
+    /*public class Cviko5
     {
         // Usage: Cviko5 <layerFile1> <layerFile2> <layerFile3> ...
         // If no args provided, looks for layer1.csv, layer2.csv, layer3.csv in working directory.
@@ -87,5 +87,5 @@ namespace MAS2
                 Console.WriteLine($"Node {i}: aggDeg={aggregateDegree[i]}, muxDeg={multiplexDegree[i]}, avgClust={clusteringPerLayer.Select(a => a[i]).Average():F4}");
             }
         }
-    }
+    }*/
 }

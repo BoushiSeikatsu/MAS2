@@ -384,5 +384,428 @@ namespace MAS2
             double variance = sumsq / degrees.Count; // population variance
             return Math.Sqrt(variance);
         }
+
+        // ---------- New measures: Relevance and Exclusive Relevance ----------
+
+        /// <summary>
+        /// Relevance of a single layer for a node, set-based as in the slides.
+        /// relevance(a, L) = |neighborhood(a, L)| / |neighborhood(a, allLayers)|
+        /// If the node has no neighbors in the union graph, returns 0.
+        /// </summary>
+        public double LayerRelevance(int nodeIndex, int layerIndex)
+        {
+            if (nodeIndex < 0 || nodeIndex >= NodeCount) throw new ArgumentOutOfRangeException(nameof(nodeIndex));
+            if (layerIndex < 0 || layerIndex >= Layers.Count) throw new ArgumentOutOfRangeException(nameof(layerIndex));
+
+            var allLayers = Enumerable.Range(0, Layers.Count);
+            var allNeighbors = GetNeighbors(nodeIndex, allLayers);
+            int denom = allNeighbors.Count;
+            if (denom == 0) return 0.0;
+
+            var onLayer = GetNeighbors(nodeIndex, new[] { layerIndex });
+            return (double)onLayer.Count / denom;
+        }
+
+        /// <summary>
+        /// Exclusive relevance of a single layer for a node, set-based.
+        /// ER(i, layer) = |exclusiveNeighbors(i, {layer})| / |neighbors(i, allLayers)|.
+        /// If the node has no neighbors in the union graph, returns 0.
+        /// </summary>
+        public double ExclusiveLayerRelevance(int nodeIndex, int layerIndex)
+        {
+            if (nodeIndex < 0 || nodeIndex >= NodeCount) throw new ArgumentOutOfRangeException(nameof(nodeIndex));
+            if (layerIndex < 0 || layerIndex >= Layers.Count) throw new ArgumentOutOfRangeException(nameof(layerIndex));
+
+            var allLayers = Enumerable.Range(0, Layers.Count);
+            var allNeighbors = GetNeighbors(nodeIndex, allLayers);
+            int denom = allNeighbors.Count;
+            if (denom == 0) return 0.0;
+
+            var exclusive = ExclusiveNeighborhood(nodeIndex, new[] { layerIndex });
+            return (double)exclusive.Count / denom;
+        }
+
+        // ---------- Flattening: unweighted and weighted ----------
+
+        /// <summary>
+        /// Unweighted flattening (union) of all layers.
+        /// An edge exists if it exists in at least one layer; weight is 1.
+        /// </summary>
+        public DokSparseMatrix<int> FlattenUnweighted()
+        {
+            if (Layers.Count == 0) return new DokSparseMatrix<int>(0, 0);
+            int n = NodeCount;
+            var flat = new DokSparseMatrix<int>(n, n);
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++)
+                {
+                    int present = 0;
+                    for (int li = 0; li < Layers.Count; li++)
+                    {
+                        if (Layers[li][i, j] != 0) { present = 1; break; }
+                    }
+                    if (present != 0)
+                    {
+                        flat[i, j] = 1;
+                    }
+                }
+            }
+            return flat;
+        }
+
+        /// <summary>
+        /// Weighted flattening (sum) of all layers.
+        /// If bySum is true, sums actual integer weights; otherwise uses layer-count multiplicity.
+        /// </summary>
+        public DokSparseMatrix<int> FlattenWeighted(bool bySum = true)
+        {
+            if (Layers.Count == 0) return new DokSparseMatrix<int>(0, 0);
+            int n = NodeCount;
+            var flat = new DokSparseMatrix<int>(n, n);
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++)
+                {
+                    int w = 0;
+                    if (bySum)
+                    {
+                        for (int li = 0; li < Layers.Count; li++) w += Layers[li][i, j];
+                    }
+                    else
+                    {
+                        for (int li = 0; li < Layers.Count; li++) if (Layers[li][i, j] != 0) w++;
+                    }
+                    if (w != 0) flat[i, j] = w;
+                }
+            }
+            return flat;
+        }
+
+        // ---------- Random walk and occupation centrality ----------
+
+        /// <summary>
+        /// Runs a simple random walk over the multilayer network and returns occupation centrality
+        /// (fraction of time spent at each node).
+        /// Step rule: choose a layer according to "layerWeights" (uniform if null), then move to a random neighbor
+        /// in that layer; if no neighbor exists in the chosen layer, the walker stays in place. If the node has
+        /// no neighbors in any layer, occasional random jump avoids trapping.
+        /// </summary>
+        public double[] OccupationCentrality(int steps = 100_000, int? startNode = null, double[] layerWeights = null, int seed = 42)
+        {
+            int n = NodeCount;
+            var occ = new double[n];
+            if (n == 0 || steps <= 0) return occ;
+
+            int Lcount = Layers.Count;
+            if (Lcount == 0) return occ;
+
+            // Normalize weights
+            double[] weights = new double[Lcount];
+            if (layerWeights == null || layerWeights.Length != Lcount)
+            {
+                for (int i = 0; i < Lcount; i++) weights[i] = 1.0 / Lcount;
+            }
+            else
+            {
+                double sumw = layerWeights.Sum();
+                if (sumw <= 0) { for (int i = 0; i < Lcount; i++) weights[i] = 1.0 / Lcount; }
+                else { for (int i = 0; i < Lcount; i++) weights[i] = layerWeights[i] / sumw; }
+            }
+
+            var rng = new Random(seed);
+            int cur = startNode.HasValue ? Math.Clamp(startNode.Value, 0, n - 1) : rng.Next(n);
+
+            // Precompute CDF for layer selection
+            double[] cdf = new double[Lcount];
+            double acc = 0.0;
+            for (int i = 0; i < Lcount; i++) { acc += weights[i]; cdf[i] = acc; }
+
+            for (int t = 0; t < steps; t++)
+            {
+                occ[cur] += 1.0;
+
+                // choose layer
+                double r = rng.NextDouble();
+                int chosen = 0;
+                while (chosen < Lcount && r > cdf[chosen]) chosen++;
+                if (chosen >= Lcount) chosen = Lcount - 1;
+
+                // collect neighbors in chosen layer
+                var L = Layers[chosen];
+                var neigh = new List<int>();
+                for (int j = 0; j < n; j++) if (L[cur, j] != 0) neigh.Add(j);
+
+                if (neigh.Count > 0)
+                {
+                    cur = neigh[rng.Next(neigh.Count)];
+                }
+                else
+                {
+                    // fallback: try aggregate neighbors
+                    var allNeigh = GetNeighbors(cur, Enumerable.Range(0, Lcount));
+                    if (allNeigh.Count > 0)
+                    {
+                        // pick deterministic index from RNG
+                        int idx = rng.Next(allNeigh.Count);
+                        cur = allNeigh.ElementAt(idx);
+                    }
+                    else
+                    {
+                        // isolated: random jump
+                        cur = rng.Next(n);
+                    }
+                }
+            }
+
+            // normalize
+            for (int i = 0; i < n; i++) occ[i] /= steps;
+            return occ;
+        }
+
+        // ---------- Cviko7 helpers moved here ----------
+
+        public struct LayerOverlapStats
+        {
+            public int Layer;
+            public int Edges;
+            public int SharedEdges;
+            public double SharedFrac;
+            public int UniqueEdges;
+            public double UniqueFrac;
+        }
+
+        /// <summary>
+        /// Analyze cross-layer edge overlap and return selected layers that share many edges across layers
+        /// and have few unique-only edges.
+        /// </summary>
+        /// <param name="minSharedFrac">Minimum fraction of a layer's edges that must be shared across >= edgeSharedMinLayers layers.</param>
+        /// <param name="edgeSharedMinLayers">An edge is considered "shared" if it appears in at least this many layers. If null => ceil(0.5 * L).</param>
+        /// <param name="uniqueMaxLayers">An edge is considered "too unique" if it appears in <= this many layers.</param>
+        /// <param name="maxUniqueFrac">Maximum allowed fraction of unique edges in a layer.</param>
+        /// <param name="summary">Per-layer statistics for diagnostics.</param>
+        public List<int> SelectLayersByEdgeOverlap(double minSharedFrac, int? edgeSharedMinLayers, int uniqueMaxLayers, double maxUniqueFrac, out List<LayerOverlapStats> summary)
+        {
+            int Lcount = Layers.Count;
+            int n = NodeCount;
+            int sharedK = edgeSharedMinLayers ?? Math.Max(2, (int)Math.Ceiling(0.5 * Lcount));
+
+            // presence[i,j] = in how many layers edge (i,j) exists; undirected so consider i<j only
+            var presence = new int[n, n];
+            for (int li = 0; li < Lcount; li++)
+            {
+                var A = Layers[li];
+                for (int i = 0; i < n; i++)
+                    for (int j = i + 1; j < n; j++)
+                        if (A[i, j] != 0) presence[i, j]++;
+            }
+
+            summary = new List<LayerOverlapStats>(Lcount);
+            for (int li = 0; li < Lcount; li++)
+            {
+                var A = Layers[li];
+                int edgesInLayer = 0, sharedInLayer = 0, uniqueInLayer = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    for (int j = i + 1; j < n; j++)
+                    {
+                        if (A[i, j] != 0)
+                        {
+                            edgesInLayer++;
+                            int p = presence[i, j];
+                            if (p >= sharedK) sharedInLayer++;
+                            if (p <= uniqueMaxLayers) uniqueInLayer++;
+                        }
+                    }
+                }
+                double sharedFrac = edgesInLayer == 0 ? 0.0 : (double)sharedInLayer / edgesInLayer;
+                double uniqueFrac = edgesInLayer == 0 ? 0.0 : (double)uniqueInLayer / edgesInLayer;
+                summary.Add(new LayerOverlapStats
+                {
+                    Layer = li,
+                    Edges = edgesInLayer,
+                    SharedEdges = sharedInLayer,
+                    SharedFrac = sharedFrac,
+                    UniqueEdges = uniqueInLayer,
+                    UniqueFrac = uniqueFrac
+                });
+            }
+
+            // Select layers meeting thresholds; if none, fallback to top by sharedFrac
+            var selected = summary
+                .Where(s => s.SharedFrac >= minSharedFrac && s.UniqueFrac <= maxUniqueFrac)
+                .Select(s => s.Layer)
+                .ToList();
+            if (selected.Count == 0)
+            {
+                selected = summary
+                    .OrderByDescending(s => s.SharedFrac)
+                    .ThenBy(s => s.UniqueFrac)
+                    .Take(Math.Max(1, Lcount / 2))
+                    .Select(s => s.Layer)
+                    .ToList();
+            }
+            return selected;
+        }
+
+        /// <summary>
+        /// Flatten only the selected layers; if weighted=false, union with weight 1; if weighted=true, either sum or layer-count.
+        /// </summary>
+        public DokSparseMatrix<int> FlattenLayers(IEnumerable<int> selectedLayers, bool weighted = false, bool bySum = true)
+        {
+            int n = NodeCount;
+            var flat = new DokSparseMatrix<int>(n, n);
+            var sel = selectedLayers?.ToHashSet() ?? new HashSet<int>(Enumerable.Range(0, Layers.Count));
+            if (!weighted)
+            {
+                foreach (var li in sel)
+                {
+                    if (li < 0 || li >= Layers.Count) continue;
+                    var A = Layers[li];
+                    for (int i = 0; i < n; i++)
+                        for (int j = i + 1; j < n; j++)
+                            if (A[i, j] != 0) { flat[i, j] = 1; flat[j, i] = 1; }
+                }
+            }
+            else
+            {
+                foreach (var li in sel)
+                {
+                    if (li < 0 || li >= Layers.Count) continue;
+                    var A = Layers[li];
+                    for (int i = 0; i < n; i++)
+                        for (int j = 0; j < n; j++)
+                        {
+                            int add = bySum ? A[i, j] : (A[i, j] != 0 ? 1 : 0);
+                            if (add != 0) flat[i, j] = flat[i, j] + add;
+                        }
+                }
+            }
+            return flat;
+        }
+
+        /// <summary>
+        /// Detect communities on a flattened adjacency via Label Propagation and compute Newman-Girvan modularity.
+        /// Returns node labels, list of communities (nodes per community), and modularity.
+        /// </summary>
+        public (int[] labels, List<List<int>> communities, double modularity) CommunitiesAndModularity(DokSparseMatrix<int> flat, int maxIter = 100, int seed = 42)
+        {
+            var labels = LabelPropagation(flat, maxIter, seed);
+            double Q = ComputeModularity(flat, labels);
+            var groups = new Dictionary<int, List<int>>();
+            for (int i = 0; i < labels.Length; i++)
+            {
+                int c = labels[i];
+                if (!groups.TryGetValue(c, out var list)) { list = new List<int>(); groups[c] = list; }
+                list.Add(i);
+            }
+            var communities = groups.Values.ToList();
+            return (labels, communities, Q);
+        }
+
+        // Simple Label Propagation (unweighted, undirected)
+        private static int[] LabelPropagation(DokSparseMatrix<int> A, int maxIter = 100, int seed = 42)
+        {
+            int n = A.Rows;
+            var labels = new int[n];
+            for (int i = 0; i < n; i++) labels[i] = i;
+            var rng = new Random(seed);
+            var order = Enumerable.Range(0, n).ToArray();
+
+            bool changed = true;
+            int iter = 0;
+            var counts = new Dictionary<int, int>();
+            while (changed && iter < maxIter)
+            {
+                changed = false;
+                iter++;
+                // shuffle processing order
+                for (int k = 0; k < n; k++)
+                {
+                    int r = rng.Next(k, n);
+                    (order[k], order[r]) = (order[r], order[k]);
+                }
+                foreach (var u in order)
+                {
+                    counts.Clear();
+                    // collect neighbor labels
+                    for (int v = 0; v < n; v++)
+                    {
+                        if (A[u, v] != 0)
+                        {
+                            int lab = labels[v];
+                            counts[lab] = counts.TryGetValue(lab, out var c) ? c + 1 : 1;
+                        }
+                    }
+                    if (counts.Count == 0) continue;
+                    int bestLab = labels[u];
+                    int bestCnt = -1;
+                    foreach (var kv in counts)
+                    {
+                        if (kv.Value > bestCnt || (kv.Value == bestCnt && kv.Key < bestLab))
+                        {
+                            bestCnt = kv.Value; bestLab = kv.Key;
+                        }
+                    }
+                    if (bestLab != labels[u]) { labels[u] = bestLab; changed = true; }
+                }
+            }
+            return labels;
+        }
+
+        // Newman–Girvan modularity for undirected graphs
+        private static double ComputeModularity(DokSparseMatrix<int> A, int[] labels)
+        {
+            int n = A.Rows;
+            // Compute degrees and total edge weight (2m)
+            var deg = new double[n];
+            double twoM = 0.0;
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++)
+                {
+                    int w = A[i, j];
+                    if (w != 0)
+                    {
+                        deg[i] += w;
+                        if (i < j) twoM += w;
+                    }
+                }
+            }
+            twoM *= 2.0;
+            if (twoM <= 0) return 0.0;
+
+            // Compute Q = sum_c (e_c - a_c^2)
+            var commNodes = new Dictionary<int, List<int>>();
+            for (int i = 0; i < n; i++)
+            {
+                int c = labels[i];
+                if (!commNodes.TryGetValue(c, out var list)) { list = new List<int>(); commNodes[c] = list; }
+                list.Add(i);
+            }
+
+            double Q = 0.0;
+            foreach (var kv in commNodes)
+            {
+                var nodes = kv.Value;
+                double e_c_twom = 0.0; // edges within community counted once divided by (2m)
+                double a_c = 0.0;      // fraction of stubs (sum deg)/(2m)
+                double sumDeg = 0.0;
+                foreach (var i in nodes) sumDeg += deg[i];
+                a_c = sumDeg / twoM;
+                for (int ix = 0; ix < nodes.Count; ix++)
+                {
+                    int i = nodes[ix];
+                    for (int jx = ix + 1; jx < nodes.Count; jx++)
+                    {
+                        int j = nodes[jx];
+                        int w = A[i, j];
+                        if (w != 0) e_c_twom += w / twoM;
+                    }
+                }
+                Q += (e_c_twom - a_c * a_c);
+            }
+            return Q;
+        }
     }
 }

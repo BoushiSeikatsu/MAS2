@@ -364,32 +364,6 @@ public class Cviko3
             }
         }
 
-        // --- Multilayer example (optional) ---
-        var layerFiles = new List<string>
-        {
-            "layer1.csv",
-            "layer2.csv",
-            "layer3.csv"
-        };
-        bool allExist = layerFiles.All(f => File.Exists(f));
-        if (allExist)
-        {
-            var ml = MultilayerNetwork.LoadFromFiles(layerFiles, ';');
-            Console.WriteLine($"Loaded multilayer network with {ml.Layers.Count} layers and {ml.NodeCount} nodes.");
-            var degPer = ml.GetDegreesPerLayer();
-            var clusPer = ml.GetClusteringPerLayer();
-            var aggDeg = ml.GetAggregateDegree();
-            var mux = ml.GetMultiplexDegree();
-            for (int i = 0; i < ml.NodeCount; i++)
-            {
-                Console.WriteLine($"Node {i}: aggregateDegree={aggDeg[i]}, multiplexDegree={mux[i]}");
-            }
-        }
-        else
-        {
-            Console.WriteLine("Multilayer example skipped: example layer1.csv/layer2.csv/layer3.csv not found in working directory.");
-        }
-
         // Print average and deviation for each algorithm and dataset
         foreach (var dataset in allResults.Keys)
         {
