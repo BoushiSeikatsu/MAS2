@@ -1,6 +1,8 @@
 // Udělat flattening a na něm udělat ty komunity a modularitu, je třeba si vybrat nějaké vrstvy na kterých to chci spojit
 
 // NOTE PRO PŘIŠTĚ: Pak je třeba tu flattened network vzít a vizualizovat 
+// Další note, je třeba ty vrcholy mít vždycky na stejném místě, takže nechat stejný layout
+// Takže stejný layout pro všechny vrstvy, vybrané vrstvy, a pak 2 vrstvy s nejvíce sdílenými hranami
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -9,7 +11,7 @@ using MAS2;
 
 namespace MAS2
 {
-    public class Cviko7
+    /*public class Cviko7
     {
         // Usage: Cviko7 <layerFile1> <layerFile2> ... [--sharedMinFrac 0.5] [--edgeSharedMinLayers auto] [--uniqueMaxLayers 1] [--maxUniqueFrac 0.4]
         // If no args provided, looks for default .edges files under bin/Debug/net8.0.
@@ -152,5 +154,5 @@ namespace MAS2
         }
 
         // Removed local community and modularity helpers in favor of MultilayerNetwork methods
-    }
+    }*/
 }

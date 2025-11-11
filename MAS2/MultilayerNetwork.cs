@@ -29,6 +29,210 @@ namespace MAS2
             }
         }
 
+        // ---------- Static helpers for single-layer (flattened) analyses ----------
+
+        /// <summary>
+        /// Build unweighted adjacency list from a DokSparseMatrix<int> (neighbors with non-zero weight).
+        /// </summary>
+        public static List<int>[] BuildAdjacencyList(DokSparseMatrix<int> A)
+        {
+            int n = A.Rows;
+            var adj = new List<int>[n];
+            for (int i = 0; i < n; i++) adj[i] = new List<int>();
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++)
+                {
+                    if (i == j) continue;
+                    if (A[i, j] != 0) adj[i].Add(j);
+                }
+            }
+            return adj;
+        }
+
+        /// <summary>
+        /// Build weighted adjacency list from a DokSparseMatrix<int> (stores positive weights).
+        /// </summary>
+        public static List<(int v, int w)>[] BuildWeightedAdjacencyList(DokSparseMatrix<int> A)
+        {
+            int n = A.Rows;
+            var adj = new List<(int v, int w)>[n];
+            for (int i = 0; i < n; i++) adj[i] = new List<(int v, int w)>();
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++)
+                {
+                    if (i == j) continue;
+                    int w = A[i, j];
+                    if (w != 0) adj[i].Add((j, w));
+                }
+            }
+            return adj;
+        }
+
+        /// <summary>
+        /// Degree centrality per node. If weighted=true returns weighted degree (sum of incident weights), otherwise counts neighbors.
+        /// </summary>
+        public static int[] DegreeCentrality(DokSparseMatrix<int> A, bool weighted)
+        {
+            int n = A.Rows;
+            var deg = new int[n];
+            for (int i = 0; i < n; i++)
+            {
+                int sum = 0;
+                for (int j = 0; j < n; j++)
+                {
+                    int w = A[i, j];
+                    if (w != 0) sum += weighted ? w : 1;
+                }
+                deg[i] = sum;
+            }
+            return deg;
+        }
+
+        /// <summary>
+        /// Neighbor count per node (number of distinct neighbors with non-zero weight).
+        /// </summary>
+        public static int[] NeighborCounts(DokSparseMatrix<int> A)
+        {
+            int n = A.Rows;
+            var cnt = new int[n];
+            for (int i = 0; i < n; i++)
+            {
+                int c = 0;
+                for (int j = 0; j < n; j++) if (A[i, j] != 0) c++;
+                cnt[i] = c;
+            }
+            return cnt;
+        }
+
+        /// <summary>
+        /// Connective redundancy per node for a single matrix. If weighted=false redundancy is 0 because deg==neighbors.
+        /// If weighted=true, computes 1 - |neighbors| / (weighted degree).
+        /// </summary>
+        public static double[] ConnectiveRedundancy(DokSparseMatrix<int> A, bool weighted)
+        {
+            int n = A.Rows;
+            var deg = DegreeCentrality(A, weighted);
+            var neigh = NeighborCounts(A);
+            var cr = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                if (deg[i] <= 0) cr[i] = 0.0;
+                else cr[i] = 1.0 - (double)neigh[i] / (double)deg[i];
+            }
+            return cr;
+        }
+
+        /// <summary>
+        /// Exclusive neighborhood count derived from a layer-count flatten (edge weight equals number of layers containing the edge).
+        /// Counts neighbors of each node for which the multiplicity is exactly 1.
+        /// </summary>
+        public static int[] ExclusiveNeighborhoodCountFromLayerCountFlatten(DokSparseMatrix<int> layerCountFlat)
+        {
+            int n = layerCountFlat.Rows;
+            var excl = new int[n];
+            for (int i = 0; i < n; i++)
+            {
+                int c = 0;
+                for (int j = 0; j < n; j++)
+                {
+                    int w = layerCountFlat[i, j];
+                    if (w == 1) c++;
+                }
+                excl[i] = c;
+            }
+            return excl;
+        }
+
+        /// <summary>
+        /// Average unweighted shortest-path length from each node to all reachable nodes (BFS). Returns NaN if no reachable nodes.
+        /// </summary>
+        public static double[] AverageShortestPathUnweighted(DokSparseMatrix<int> A)
+        {
+            int n = A.Rows;
+            var adj = BuildAdjacencyList(A);
+            var avg = new double[n];
+            for (int s = 0; s < n; s++)
+            {
+                var dist = new int[n];
+                for (int i = 0; i < n; i++) dist[i] = -1;
+                var q = new Queue<int>();
+                q.Enqueue(s);
+                dist[s] = 0;
+                while (q.Count > 0)
+                {
+                    int u = q.Dequeue();
+                    foreach (var v in adj[u])
+                    {
+                        if (dist[v] == -1)
+                        {
+                            dist[v] = dist[u] + 1;
+                            q.Enqueue(v);
+                        }
+                    }
+                }
+                long sum = 0; int count = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    if (i == s) continue;
+                    if (dist[i] >= 0) { sum += dist[i]; count++; }
+                }
+                avg[s] = count > 0 ? (double)sum / count : double.NaN;
+            }
+            return avg;
+        }
+
+        /// <summary>
+        /// Average weighted shortest-path length using edge costs = 1 / multiplicity (expects a layer-count flatten matrix).
+        /// Uses Dijkstra per source; returns NaN if no reachable nodes.
+        /// </summary>
+        public static double[] AverageShortestPathWeightedByInverseMultiplicity(DokSparseMatrix<int> layerCountFlat)
+        {
+            int n = layerCountFlat.Rows;
+            var adj = BuildWeightedAdjacencyList(layerCountFlat);
+            var avg = new double[n];
+            var pq = new PriorityQueue<(int node, double dist), double>();
+            var dist = new double[n];
+            var visited = new bool[n];
+
+            for (int s = 0; s < n; s++)
+            {
+                for (int i = 0; i < n; i++) { dist[i] = double.PositiveInfinity; visited[i] = false; }
+                dist[s] = 0.0;
+                pq.Clear();
+                pq.Enqueue((s, 0.0), 0.0);
+
+                while (pq.Count > 0)
+                {
+                    var cur = pq.Dequeue();
+                    int u = cur.node;
+                    if (visited[u]) continue;
+                    visited[u] = true;
+                    foreach (var (v, w) in adj[u])
+                    {
+                        if (w <= 0) continue;
+                        double cost = 1.0 / w;
+                        double nd = dist[u] + cost;
+                        if (nd < dist[v])
+                        {
+                            dist[v] = nd;
+                            pq.Enqueue((v, nd), nd);
+                        }
+                    }
+                }
+
+                double sum = 0.0; int count = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    if (i == s) continue;
+                    if (!double.IsInfinity(dist[i])) { sum += dist[i]; count++; }
+                }
+                avg[s] = count > 0 ? sum / count : double.NaN;
+            }
+            return avg;
+        }
+
         public static MultilayerNetwork LoadFromFiles(IEnumerable<string> paths, char delimiter = ';')
         {
             var layers = new List<DokSparseMatrix<int>>();
