@@ -686,6 +686,74 @@ namespace MAS2
             return flat;
         }
 
+        /// <summary>
+        /// Unweighted flattening of selected layers only.
+        /// </summary>
+        public DokSparseMatrix<int> FlattenUnweighted(IEnumerable<int> layerIndices)
+        {
+            var indices = layerIndices.ToList();
+            if (indices.Count == 0) return new DokSparseMatrix<int>(NodeCount, NodeCount);
+            int n = NodeCount;
+            var flat = new DokSparseMatrix<int>(n, n);
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++)
+                {
+                    int present = 0;
+                    foreach (var li in indices)
+                    {
+                        if (li >= 0 && li < Layers.Count && Layers[li][i, j] != 0)
+                        {
+                            present = 1;
+                            break;
+                        }
+                    }
+                    if (present != 0)
+                    {
+                        flat[i, j] = 1;
+                    }
+                }
+            }
+            return flat;
+        }
+
+        /// <summary>
+        /// Weighted flattening (sum) of selected layers.
+        /// If bySum is true, sums actual integer weights; otherwise uses layer-count multiplicity.
+        /// </summary>
+        public DokSparseMatrix<int> FlattenWeighted(IEnumerable<int> layerIndices, bool bySum = true)
+        {
+            var indices = layerIndices.ToList();
+            if (indices.Count == 0) return new DokSparseMatrix<int>(NodeCount, NodeCount);
+            int n = NodeCount;
+            var flat = new DokSparseMatrix<int>(n, n);
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++)
+                {
+                    int w = 0;
+                    if (bySum)
+                    {
+                        foreach (var li in indices)
+                        {
+                            if (li >= 0 && li < Layers.Count)
+                                w += Layers[li][i, j];
+                        }
+                    }
+                    else
+                    {
+                        foreach (var li in indices)
+                        {
+                            if (li >= 0 && li < Layers.Count && Layers[li][i, j] != 0)
+                                w++;
+                        }
+                    }
+                    if (w != 0) flat[i, j] = w;
+                }
+            }
+            return flat;
+        }
+
         // ---------- Random walk and occupation centrality ----------
 
         /// <summary>
