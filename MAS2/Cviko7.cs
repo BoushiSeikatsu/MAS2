@@ -11,7 +11,7 @@ using MAS2;
 
 namespace MAS2
 {
-    /*public class Cviko7
+    public class Cviko7
     {
         // Usage: Cviko7 <layerFile1> <layerFile2> ... [--sharedMinFrac 0.5] [--edgeSharedMinLayers auto] [--uniqueMaxLayers 1] [--maxUniqueFrac 0.4]
         // If no args provided, looks for default .edges files under bin/Debug/net8.0.
@@ -92,7 +92,8 @@ namespace MAS2
             Console.WriteLine($"Saved flattened edge list to {flatCsv}.");
 
             // ---- Community detection (Label Propagation) and modularity ----
-            var result = ml.CommunitiesAndModularity(flat, maxIter: 100, seed: 42);
+            // Using minCommunitySize=3 to merge small communities and avoid fragmentation
+            var result = ml.CommunitiesAndModularity(flat, maxIter: 100, seed: 42, minCommunitySize: 3);
             var labels = result.labels;
             double modularity = result.modularity;
             Console.WriteLine($"Communities: {result.communities.Count}, Modularity Q = {modularity:F6}");
@@ -104,6 +105,44 @@ namespace MAS2
                 for (int i = 0; i < labels.Length; i++) w.WriteLine($"{i},{labels[i]}");
             }
             File.WriteAllText("modularity.txt", $"Q={modularity:F6}, communities={labels.Distinct().Count()}\n");
+
+            // ---- Visualize the flattened network with communities ----
+            Console.WriteLine("Generating network visualizations...");
+            
+            // Save positions for consistency across all plots
+            string positionsFile = "network_positions.csv";
+            
+            // Plot 1: Selected layers flattened network
+            NetworkPlotting.PlotNetworkAuto(
+                flat, 
+                labels, 
+                "network_selected_layers.png",
+                positionsFile,
+                $"Network (Selected Layers) - Q={modularity:F4}",
+                seed: 42
+            );
+            Console.WriteLine("Saved network_selected_layers.png");
+
+            // Plot 2: Full network (all layers) - using same positions
+            var labelsAll = ml.CommunitiesAndModularity(flatAllUnweighted, maxIter: 100, seed: 42, minCommunitySize: 3).labels;
+            NetworkPlotting.PlotNetworkAuto(
+                flatAllUnweighted,
+                labelsAll,
+                "network_all_layers.png",
+                positionsFile,
+                "Network (All Layers)",
+                seed: 42
+            );
+            Console.WriteLine("Saved network_all_layers.png");
+
+            // Plot 3: Circular layout for comparison
+            NetworkPlotting.PlotNetworkCircular(
+                flat,
+                labels,
+                "network_circular.png",
+                $"Network Circular Layout - Q={modularity:F4}"
+            );
+            Console.WriteLine("Saved network_circular.png");
 
             // ---- Extra: top-2 layers by number of shared edges, flatten and community detection ----
             // "Shared" is defined using the same edgeSharedMinLayers threshold used above.
@@ -123,7 +162,7 @@ namespace MAS2
                 Console.WriteLine($"Saved flattened edge list (top2 shared) to {flatTopCsv}.")
                 ;
 
-                var resTop = ml.CommunitiesAndModularity(flatTop, maxIter: 100, seed: 42);
+                var resTop = ml.CommunitiesAndModularity(flatTop, maxIter: 100, seed: 42, minCommunitySize: 3);
                 Console.WriteLine($"[Top2] Communities: {resTop.communities.Count}, Modularity Q = {resTop.modularity:F6}");
 
                 using (var w2 = new StreamWriter("communities_top2.csv"))
@@ -132,6 +171,26 @@ namespace MAS2
                     for (int i = 0; i < resTop.labels.Length; i++) w2.WriteLine($"{i},{resTop.labels[i]}");
                 }
                 File.WriteAllText("modularity_top2.txt", $"Q={resTop.modularity:F6}, communities={resTop.communities.Count}\n");
+
+                // Visualize top-2 network (reusing same positions for consistency)
+                NetworkPlotting.PlotNetworkAuto(
+                    flatTop,
+                    resTop.labels,
+                    "network_top2_shared.png",
+                    "network_positions.csv",  // Use same positions as other plots
+                    $"Network (Top 2 Shared Layers) - Q={resTop.modularity:F4}",
+                    seed: 42
+                );
+                Console.WriteLine("Saved network_top2_shared.png");
+
+                // Also create circular layout version for top-2
+                NetworkPlotting.PlotNetworkCircular(
+                    flatTop,
+                    resTop.labels,
+                    "network_top2_shared_circular.png",
+                    $"Network (Top 2 Shared Layers) Circular - Q={resTop.modularity:F4}"
+                );
+                Console.WriteLine("Saved network_top2_shared_circular.png");
             }
         }
 
@@ -154,5 +213,5 @@ namespace MAS2
         }
 
         // Removed local community and modularity helpers in favor of MultilayerNetwork methods
-    }*/
+    }
 }

@@ -1,1 +1,1 @@
-Q=-0.053182, communities=96
+Q=0.317088, communities=6

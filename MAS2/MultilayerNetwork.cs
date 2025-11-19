@@ -960,9 +960,24 @@ namespace MAS2
         /// Detect communities on a flattened adjacency via Label Propagation and compute Newman-Girvan modularity.
         /// Returns node labels, list of communities (nodes per community), and modularity.
         /// </summary>
-        public (int[] labels, List<List<int>> communities, double modularity) CommunitiesAndModularity(DokSparseMatrix<int> flat, int maxIter = 100, int seed = 42)
+        /// <param name="flat">Adjacency matrix of the network</param>
+        /// <param name="maxIter">Maximum iterations for label propagation</param>
+        /// <param name="seed">Random seed for reproducibility</param>
+        /// <param name="minCommunitySize">Minimum community size (default 3). Communities smaller than this will be merged.</param>
+        public (int[] labels, List<List<int>> communities, double modularity) CommunitiesAndModularity(
+            DokSparseMatrix<int> flat, 
+            int maxIter = 100, 
+            int seed = 42, 
+            int minCommunitySize = 3)
         {
             var labels = LabelPropagation(flat, maxIter, seed);
+            
+            // Merge small communities
+            if (minCommunitySize > 1)
+            {
+                labels = MergeSmallCommunities(flat, labels, minCommunitySize);
+            }
+            
             double Q = ComputeModularity(flat, labels);
             var groups = new Dictionary<int, List<int>>();
             for (int i = 0; i < labels.Length; i++)
@@ -975,7 +990,7 @@ namespace MAS2
             return (labels, communities, Q);
         }
 
-        // Simple Label Propagation (unweighted, undirected)
+        // Label Propagation (weighted version for better community detection)
         private static int[] LabelPropagation(DokSparseMatrix<int> A, int maxIter = 100, int seed = 42)
         {
             int n = A.Rows;
@@ -991,7 +1006,7 @@ namespace MAS2
             {
                 changed = false;
                 iter++;
-                // shuffle processing order
+                // shuffle processing order for randomization
                 for (int k = 0; k < n; k++)
                 {
                     int r = rng.Next(k, n);
@@ -1000,20 +1015,25 @@ namespace MAS2
                 foreach (var u in order)
                 {
                     counts.Clear();
-                    // collect neighbor labels
+                    // collect neighbor labels weighted by edge weights
                     for (int v = 0; v < n; v++)
                     {
-                        if (A[u, v] != 0)
+                        if (u == v) continue;  // Skip self-loops
+                        int weight = A[u, v];
+                        if (weight != 0)
                         {
                             int lab = labels[v];
-                            counts[lab] = counts.TryGetValue(lab, out var c) ? c + 1 : 1;
+                            counts[lab] = counts.TryGetValue(lab, out var c) ? c + weight : weight;
                         }
                     }
                     if (counts.Count == 0) continue;
+                    
+                    // Find most common label among neighbors (weighted by edge weights)
                     int bestLab = labels[u];
                     int bestCnt = -1;
                     foreach (var kv in counts)
                     {
+                        // Prefer higher weight, break ties by lower label ID for determinism
                         if (kv.Value > bestCnt || (kv.Value == bestCnt && kv.Key < bestLab))
                         {
                             bestCnt = kv.Value; bestLab = kv.Key;
@@ -1025,10 +1045,116 @@ namespace MAS2
             return labels;
         }
 
+        /// <summary>
+        /// Merge small communities (below minSize) into the most connected neighboring community.
+        /// </summary>
+        private static int[] MergeSmallCommunities(DokSparseMatrix<int> A, int[] labels, int minSize)
+        {
+            int n = A.Rows;
+            var newLabels = (int[])labels.Clone();
+            
+            // Keep merging until no small communities remain
+            bool merged = true;
+            while (merged)
+            {
+                merged = false;
+                
+                // Count community sizes
+                var communitySizes = new Dictionary<int, int>();
+                var communityNodes = new Dictionary<int, List<int>>();
+                for (int i = 0; i < n; i++)
+                {
+                    int c = newLabels[i];
+                    communitySizes[c] = communitySizes.TryGetValue(c, out var count) ? count + 1 : 1;
+                    if (!communityNodes.TryGetValue(c, out var nodes))
+                    {
+                        nodes = new List<int>();
+                        communityNodes[c] = nodes;
+                    }
+                    nodes.Add(i);
+                }
+                
+                // Find small communities
+                var smallCommunities = communitySizes
+                    .Where(kv => kv.Value < minSize)
+                    .Select(kv => kv.Key)
+                    .ToList();
+                
+                if (smallCommunities.Count == 0) break;
+                
+                // Merge each small community with its most connected neighbor community
+                foreach (var smallComm in smallCommunities)
+                {
+                    var nodesInSmall = communityNodes[smallComm];
+                    
+                    // Calculate edge weight to each other community
+                    var edgeWeightToComm = new Dictionary<int, int>();
+                    foreach (var node in nodesInSmall)
+                    {
+                        for (int neighbor = 0; neighbor < n; neighbor++)
+                        {
+                            if (node == neighbor) continue;
+                            int weight = A[node, neighbor];
+                            if (weight == 0) continue;
+                            
+                            int neighborComm = newLabels[neighbor];
+                            if (neighborComm == smallComm) continue; // Skip same community
+                            
+                            edgeWeightToComm[neighborComm] = edgeWeightToComm.TryGetValue(neighborComm, out var w) ? w + weight : weight;
+                        }
+                    }
+                    
+                    // Find the community with highest edge weight
+                    if (edgeWeightToComm.Count > 0)
+                    {
+                        int bestComm = edgeWeightToComm.OrderByDescending(kv => kv.Value).First().Key;
+                        
+                        // Merge: assign all nodes from small community to best community
+                        foreach (var node in nodesInSmall)
+                        {
+                            newLabels[node] = bestComm;
+                        }
+                        merged = true;
+                    }
+                    else
+                    {
+                        // Isolated community with no external edges - merge with smallest other community
+                        var otherComms = communitySizes.Keys.Where(c => c != smallComm).ToList();
+                        if (otherComms.Count > 0)
+                        {
+                            int targetComm = otherComms.OrderBy(c => communitySizes[c]).First();
+                            foreach (var node in nodesInSmall)
+                            {
+                                newLabels[node] = targetComm;
+                            }
+                            merged = true;
+                        }
+                    }
+                }
+            }
+            
+            // Renumber communities to be consecutive (0, 1, 2, ...)
+            var labelMap = new Dictionary<int, int>();
+            int nextLabel = 0;
+            for (int i = 0; i < n; i++)
+            {
+                int oldLabel = newLabels[i];
+                if (!labelMap.ContainsKey(oldLabel))
+                {
+                    labelMap[oldLabel] = nextLabel++;
+                }
+                newLabels[i] = labelMap[oldLabel];
+            }
+            
+            return newLabels;
+        }
+
         // Newman–Girvan modularity for undirected graphs
+        // Q = (1/2m) * sum_ij [A_ij - (k_i * k_j)/(2m)] * delta(c_i, c_j)
         private static double ComputeModularity(DokSparseMatrix<int> A, int[] labels)
         {
             int n = A.Rows;
+            
             // Compute degrees and total edge weight (2m)
             var deg = new double[n];
             double twoM = 0.0;
@@ -1040,43 +1166,29 @@ namespace MAS2
                     if (w != 0)
                     {
                         deg[i] += w;
-                        if (i < j) twoM += w;
+                        if (i < j) twoM += w;  // Count each edge once for undirected graph
                     }
                 }
             }
-            twoM *= 2.0;
+            twoM *= 2.0;  // 2m = total degree sum
             if (twoM <= 0) return 0.0;
 
-            // Compute Q = sum_c (e_c - a_c^2)
-            var commNodes = new Dictionary<int, List<int>>();
+            // Compute Q = (1/2m) * sum_ij [A_ij - (k_i * k_j)/(2m)] * delta(c_i, c_j)
+            double Q = 0.0;
             for (int i = 0; i < n; i++)
             {
-                int c = labels[i];
-                if (!commNodes.TryGetValue(c, out var list)) { list = new List<int>(); commNodes[c] = list; }
-                list.Add(i);
-            }
-
-            double Q = 0.0;
-            foreach (var kv in commNodes)
-            {
-                var nodes = kv.Value;
-                double e_c_twom = 0.0; // edges within community counted once divided by (2m)
-                double a_c = 0.0;      // fraction of stubs (sum deg)/(2m)
-                double sumDeg = 0.0;
-                foreach (var i in nodes) sumDeg += deg[i];
-                a_c = sumDeg / twoM;
-                for (int ix = 0; ix < nodes.Count; ix++)
+                for (int j = 0; j < n; j++)
                 {
-                    int i = nodes[ix];
-                    for (int jx = ix + 1; jx < nodes.Count; jx++)
-                    {
-                        int j = nodes[jx];
-                        int w = A[i, j];
-                        if (w != 0) e_c_twom += w / twoM;
-                    }
+                    // Only consider pairs in the same community
+                    if (labels[i] != labels[j]) continue;
+                    
+                    int A_ij = A[i, j];
+                    double expected = (deg[i] * deg[j]) / twoM;
+                    Q += (A_ij - expected);
                 }
-                Q += (e_c_twom - a_c * a_c);
             }
+            Q /= twoM;
+            
             return Q;
         }
     }

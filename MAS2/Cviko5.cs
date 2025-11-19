@@ -7,7 +7,7 @@ using MAS2;
 //Potřeba je kouknout na ty metriky!
 namespace MAS2
 {
-    public class Cviko5
+    /*public class Cviko5
     {
         // Usage: Cviko5 <layerFile1> <layerFile2> <layerFile3> ...
         // If no args provided, looks for layer1.csv, layer2.csv, layer3.csv in working directory.
@@ -34,6 +34,11 @@ namespace MAS2
             var ml = MultilayerNetwork.LoadFromMultilayerFiles(existing, ' ', true);
             Console.WriteLine($"Loaded multilayer network with {ml.Layers.Count} layers and {ml.NodeCount} nodes.");
 
+            // Create output directory if it doesn't exist
+            string outputDir = "data";
+            Directory.CreateDirectory(outputDir);
+            Console.WriteLine($"Output directory: {outputDir}/");
+
             // Compute measures
             var degreesPerLayer = ml.GetDegreesPerLayer();
             var clusteringPerLayer = ml.GetClusteringPerLayer();
@@ -42,7 +47,7 @@ namespace MAS2
             var aggregateMatrix = ml.GetAggregateMatrix();
 
             // Prepare CSV output
-            string outPath = "multilayer_node_measures.csv";
+            string outPath = Path.Combine(outputDir, "multilayer_node_measures.csv");
             using (var w = new StreamWriter(outPath))
             {
                 // Header
@@ -92,7 +97,7 @@ namespace MAS2
 
             Console.WriteLine("Flattening multilayer network (unweighted union)...");
             var flatUnw = ml.FlattenUnweighted();
-            NetworkGenerator.SaveMatrixAsEdgeList(flatUnw, "flatten_unweighted.csv");
+            NetworkGenerator.SaveMatrixAsEdgeList(flatUnw, Path.Combine(outputDir, "flatten_unweighted.csv"));
 
             // Additionally build a layer-count multiplicity flatten internally for exclusive-neighborhood calculation
             var flatLayerCount = ml.FlattenWeighted(bySum: false);
@@ -115,7 +120,7 @@ namespace MAS2
             }
 
             // Save flattened (unweighted) measures per node
-            string outFlatUnw = "flattened_measures_unweighted.csv";
+            string outFlatUnw = Path.Combine(outputDir, "flattened_measures_unweighted.csv");
             using (var w = new StreamWriter(outFlatUnw))
             {
                 w.WriteLine("Node,Degree,DegreeDeviation,Neighborhood,ConnectiveRedundancy,XNeighborhood,AvgShortestPath");
@@ -138,7 +143,7 @@ namespace MAS2
             // --------- WEIGHTED FLATTENING: Reveal multi-layer redundancy ---------
             Console.WriteLine("\nFlattening multilayer network (weighted by layer multiplicity)...");
             var flatWeighted = ml.FlattenWeighted(bySum: false); // bySum=false uses layer-count as weight
-            NetworkGenerator.SaveMatrixAsEdgeList(flatWeighted, "flatten_weighted.csv");
+            NetworkGenerator.SaveMatrixAsEdgeList(flatWeighted, Path.Combine(outputDir, "flatten_weighted.csv"));
 
             // Measures on weighted flatten
             var degWeighted = MultilayerNetwork.DegreeCentrality(flatWeighted, weighted: true);  // Weighted degree (sum of multiplicities)
@@ -147,7 +152,7 @@ namespace MAS2
             var avgDistWeighted = MultilayerNetwork.AverageShortestPathWeightedByInverseMultiplicity(flatWeighted);
 
             // Save weighted measures
-            string outFlatWeighted = "flattened_measures_weighted.csv";
+            string outFlatWeighted = Path.Combine(outputDir, "flattened_measures_weighted.csv");
             using (var w = new StreamWriter(outFlatWeighted))
             {
                 w.WriteLine("Node,DegreeWeighted,Neighborhood,ConnectiveRedundancyWeighted,AvgShortestPathWeighted");
@@ -197,33 +202,33 @@ namespace MAS2
             // Degree deviation distribution (multilayer-only, no weighted variant)
             var (xDD, yDD) = ContinuousFrequency(degreeDeviation);
             if (xDD.Length > 0)
-                ChartGenerator.SaveDistributionPng("loglog_degree_deviation.png", xDD, yDD, "Degree deviation (across layers)");
+                ChartGenerator.SaveDistributionPng(Path.Combine(outputDir, "loglog_degree_deviation.png"), xDD, yDD, "Degree deviation (across layers)");
 
             // Neighborhood centrality distribution (same for weighted/unweighted)
             var (xNeigh, yNeigh) = DiscreteFrequency(neighUnw);
-            ChartGenerator.SaveDistributionPng("loglog_neighborhood.png", xNeigh, yNeigh, "Neighborhood");
+            ChartGenerator.SaveDistributionPng(Path.Combine(outputDir, "loglog_neighborhood.png"), xNeigh, yNeigh, "Neighborhood");
 
             // Exclusive neighborhood distribution (multilayer-only, no weighted variant)
             var (xExcl, yExcl) = DiscreteFrequency(exclusiveNeighborhood);
-            ChartGenerator.SaveDistributionPng("loglog_xneighborhood.png", xExcl, yExcl, "XNeighborhood (neighbors exclusive to selected layers)");
+            ChartGenerator.SaveDistributionPng(Path.Combine(outputDir, "loglog_xneighborhood.png"), xExcl, yExcl, "XNeighborhood (neighbors exclusive to selected layers)");
 
             // --------- Weighted flattening charts (replaces unweighted degree, connective redundancy, distance) ---------
             var (xDegW, yDegW) = DiscreteFrequency(degWeighted);
-            ChartGenerator.SaveDistributionPng("loglog_degree.png", xDegW, yDegW, "Degree (weighted by layer multiplicity)");
+            ChartGenerator.SaveDistributionPng(Path.Combine(outputDir, "loglog_degree.png"), xDegW, yDegW, "Degree (weighted by layer multiplicity)");
 
             var (xCrW, yCrW) = ContinuousFrequency(connRedWeighted);
             if (xCrW.Length > 0)
-                ChartGenerator.SaveDistributionPng("loglog_connective_redundancy.png", xCrW, yCrW, "Connective redundancy (weighted)");
+                ChartGenerator.SaveDistributionPng(Path.Combine(outputDir, "loglog_connective_redundancy.png"), xCrW, yCrW, "Connective redundancy (weighted)");
 
             var (xDw, yDw) = ContinuousFrequency(avgDistWeighted);
             if (xDw.Length > 0)
-                ChartGenerator.SaveDistributionPng("loglog_avg_distance.png", xDw, yDw, "Avg shortest path (weighted by 1/multiplicity)");
+                ChartGenerator.SaveDistributionPng(Path.Combine(outputDir, "loglog_avg_distance.png"), xDw, yDw, "Avg shortest path (weighted by 1/multiplicity)");
 
 
             // --------- Save each measure into its own CSV ---------
             void SaveSingleColumn(string path, string header, IEnumerable<string> lines)
             {
-                using var sw = new StreamWriter(path);
+                using var sw = new StreamWriter(Path.Combine(outputDir, path));
                 sw.WriteLine($"Node,{header}");
                 int idx = 0;
                 foreach (var val in lines)
@@ -283,7 +288,7 @@ namespace MAS2
             }
 
             // Save CSV for 2-layer experiment
-            string out2Layers = "flattened_measures_2layers.csv";
+            string out2Layers = Path.Combine(outputDir, "flattened_measures_2layers.csv");
             using (var w = new StreamWriter(out2Layers))
             {
                 w.WriteLine("Node,Degree,DegreeDeviation,Neighborhood,ConnectiveRedundancy,XNeighborhood,AvgShortestPath");
@@ -306,13 +311,13 @@ namespace MAS2
             // Generate charts for 2-layer experiment (unweighted-only measures)
             var (xDD2L, yDD2L) = ContinuousFrequency(degDev2L);
             if (xDD2L.Length > 0)
-                ChartGenerator.SaveDistributionPng("loglog_degree_deviation_2layers.png", xDD2L, yDD2L, "Degree deviation (2 layers)");
+                ChartGenerator.SaveDistributionPng(Path.Combine(outputDir, "loglog_degree_deviation_2layers.png"), xDD2L, yDD2L, "Degree deviation (2 layers)");
 
             var (xNeigh2L, yNeigh2L) = DiscreteFrequency(neigh2L);
-            ChartGenerator.SaveDistributionPng("loglog_neighborhood_2layers.png", xNeigh2L, yNeigh2L, "Neighborhood (2 random layers)");
+            ChartGenerator.SaveDistributionPng(Path.Combine(outputDir, "loglog_neighborhood_2layers.png"), xNeigh2L, yNeigh2L, "Neighborhood (2 random layers)");
 
             var (xExcl2L, yExcl2L) = DiscreteFrequency(exclNeigh2L);
-            ChartGenerator.SaveDistributionPng("loglog_xneighborhood_2layers.png", xExcl2L, yExcl2L, "XNeighborhood (2 random layers)");
+            ChartGenerator.SaveDistributionPng(Path.Combine(outputDir, "loglog_xneighborhood_2layers.png"), xExcl2L, yExcl2L, "XNeighborhood (2 random layers)");
 
             // Save individual CSV files for 2-layer experiment
             SaveSingleColumn("degree_2layers.csv", "Degree", deg2L.Select(v => v.ToString()));
@@ -333,7 +338,7 @@ namespace MAS2
             var connRed2LW = MultilayerNetwork.ConnectiveRedundancy(twoLayersFlatWeighted, weighted: true);
             var avgDist2LW = MultilayerNetwork.AverageShortestPathWeightedByInverseMultiplicity(twoLayersFlatWeighted);
 
-            string out2LayersW = "flattened_measures_2layers_weighted.csv";
+            string out2LayersW = Path.Combine(outputDir, "flattened_measures_2layers_weighted.csv");
             using (var w = new StreamWriter(out2LayersW))
             {
                 w.WriteLine("Node,DegreeWeighted,Neighborhood,ConnectiveRedundancyWeighted,AvgShortestPathWeighted");
@@ -353,15 +358,15 @@ namespace MAS2
 
             // Weighted 2-layer charts (replacing unweighted versions for these measures)
             var (xDeg2LW, yDeg2LW) = DiscreteFrequency(deg2LW);
-            ChartGenerator.SaveDistributionPng("loglog_degree_2layers.png", xDeg2LW, yDeg2LW, "Degree weighted (2 random layers)");
+            ChartGenerator.SaveDistributionPng(Path.Combine(outputDir, "loglog_degree_2layers.png"), xDeg2LW, yDeg2LW, "Degree weighted (2 random layers)");
 
             var (xCr2LW, yCr2LW) = ContinuousFrequency(connRed2LW);
             if (xCr2LW.Length > 0)
-                ChartGenerator.SaveDistributionPng("loglog_connective_redundancy_2layers.png", xCr2LW, yCr2LW, "Connective redundancy weighted (2 layers)");
+                ChartGenerator.SaveDistributionPng(Path.Combine(outputDir, "loglog_connective_redundancy_2layers.png"), xCr2LW, yCr2LW, "Connective redundancy weighted (2 layers)");
 
             var (xDu2LW, yDu2LW) = ContinuousFrequency(avgDist2LW);
             if (xDu2LW.Length > 0)
-                ChartGenerator.SaveDistributionPng("loglog_avg_distance_2layers.png", xDu2LW, yDu2LW, "Avg shortest path weighted (2 layers)");
+                ChartGenerator.SaveDistributionPng(Path.Combine(outputDir, "loglog_avg_distance_2layers.png"), xDu2LW, yDu2LW, "Avg shortest path weighted (2 layers)");
 
             SaveSingleColumn("degree_2layers_weighted.csv", "DegreeWeighted", deg2LW.Select(v => v.ToString()));
             SaveSingleColumn("connective_redundancy_2layers_weighted.csv", "ConnectiveRedundancyWeighted", connRed2LW.Select(v => v.ToString("F6", CultureInfo.InvariantCulture)));
@@ -369,5 +374,5 @@ namespace MAS2
 
             Console.WriteLine("Weighted 2-layer experiment completed.");
         }
-    }
+    }*/
 }
