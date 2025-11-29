@@ -11,7 +11,7 @@ using MAS2;
 
 namespace MAS2
 {
-    public class Cviko7
+    /*public class Cviko7
     {
         // Usage: Cviko7 <layerFile1> <layerFile2> ... [--sharedMinFrac 0.5] [--edgeSharedMinLayers auto] [--uniqueMaxLayers 1] [--maxUniqueFrac 0.4]
         // If no args provided, looks for default .edges files under bin/Debug/net8.0.
@@ -213,5 +213,5 @@ namespace MAS2
         }
 
         // Removed local community and modularity helpers in favor of MultilayerNetwork methods
-    }
+    }*/
 }

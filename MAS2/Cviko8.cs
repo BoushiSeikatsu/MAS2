@@ -5,6 +5,7 @@ using System.Linq;
 using System.Globalization;
 using MAS2;
 //Potřeba je kouknout na ty metriky!
+//Bude ho hodně zajímat pravidla, vypsat je, jak jsem je našel, jak je používám apod, apriori algoritmus?
 namespace MAS2
 {
     /*public class Cviko8

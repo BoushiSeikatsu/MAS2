@@ -269,5 +269,73 @@ namespace MAS2
             }
             return (bestClique, bestAverage);
         }
+
+        /// <summary>
+        /// Computes the size of the largest connected component.
+        /// </summary>
+        /// <returns>The number of nodes in the largest connected component.</returns>
+        public int GetLargestConnectedComponentSize()
+        {
+            var visited = new HashSet<int>();
+            int maxComponentSize = 0;
+
+            // Build adjacency list for traversal
+            var adj = new Dictionary<int, List<int>>();
+            
+            // We need to iterate over all nodes that have at least one edge.
+            // The matrix might have empty rows/cols if nodes are isolated or not present in this slice.
+            // We can iterate over the elements to build the adjacency list.
+            var elements = _matrix.GetType().GetField("_elements", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(_matrix) as Dictionary<MatrixKey, T>;
+            
+            foreach (var kvp in elements)
+            {
+                int u = kvp.Key.Row;
+                int v = kvp.Key.Column;
+                
+                if (!adj.ContainsKey(u)) adj[u] = new List<int>();
+                adj[u].Add(v);
+                
+                // Ensure v is in adj even if it has no outgoing edges (though in undirected it will appear as u in another pair)
+                // But since we iterate elements, if (u,v) exists, (v,u) should exist for undirected.
+                // If directed, we might need to handle differently, but user said "undirected".
+            }
+
+            // Iterate over all nodes present in the adjacency list
+            foreach (var node in adj.Keys)
+            {
+                if (!visited.Contains(node))
+                {
+                    int currentComponentSize = 0;
+                    var stack = new Stack<int>();
+                    stack.Push(node);
+                    visited.Add(node);
+
+                    while (stack.Count > 0)
+                    {
+                        int u = stack.Pop();
+                        currentComponentSize++;
+
+                        if (adj.TryGetValue(u, out var neighbors))
+                        {
+                            foreach (var v in neighbors)
+                            {
+                                if (!visited.Contains(v))
+                                {
+                                    visited.Add(v);
+                                    stack.Push(v);
+                                }
+                            }
+                        }
+                    }
+
+                    if (currentComponentSize > maxComponentSize)
+                    {
+                        maxComponentSize = currentComponentSize;
+                    }
+                }
+            }
+
+            return maxComponentSize;
+        }
     }
 }
