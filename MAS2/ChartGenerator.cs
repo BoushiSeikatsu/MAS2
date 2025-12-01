@@ -183,4 +183,61 @@ public static class ChartGenerator
         // Save using the same API we used earlier
         plt.SavePng(path, width, height);
     }
+
+    // Saves a heatmap to PNG
+    public static void SaveHeatmap(string path, double[,] data, string title, string xLabel, string yLabel, int width = 1200, int height = 800)
+    {
+        if (data == null) throw new ArgumentNullException(nameof(data));
+
+        // Ensure directory exists
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".");
+
+        var plt = new ScottPlot.Plot();
+        
+        // Add Heatmap
+        var hm = plt.Add.Heatmap(data);
+        
+        // Customize appearance
+        // ScottPlot 5 Heatmap automatically maps values to colors (Viridis by default usually)
+        // We can add a colorbar
+        plt.Add.ColorBar(hm);
+
+        plt.Title(title);
+        plt.XLabel(xLabel);
+        plt.YLabel(yLabel);
+
+        // Flip Y axis so Rank 0 is at the top if desired? 
+        // Standard matrix: [0,0] is usually bottom-left or top-left depending on library.
+        // ScottPlot 5 Heatmap: [0,0] is bottom-left by default.
+        // If we want Rank 0 (Top User) at the TOP, we need to invert the Y axis or reverse the data rows.
+        // Let's invert the Y axis view.
+        // Actually, let's just let it be standard: Rank 0 at bottom (0) to Rank 99 at top (99).
+        // Or if we want Rank 0 at top, we can flip the data or the axis.
+        // Let's keep it simple: Rank 0 is row 0. In ScottPlot Heatmap, row 0 is at the bottom.
+        // So Rank 0 (Top User) will be at the bottom. That's fine.
+
+        plt.SavePng(path, width, height);
+    }
+
+    // Saves a simple line chart with custom labels
+    public static void SaveSimpleLineChart(string path, double[] xs, double[] ys, string title, string xLabel, string yLabel, int width = 1200, int height = 800)
+    {
+        if (xs == null) throw new ArgumentNullException(nameof(xs));
+        if (ys == null) throw new ArgumentNullException(nameof(ys));
+        if (xs.Length != ys.Length) throw new ArgumentException("xs and ys must have same length");
+
+        // Ensure directory exists
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".");
+
+        var plt = new ScottPlot.Plot();
+        var scatter = plt.Add.Scatter(xs, ys);
+        scatter.LineWidth = 2;
+        scatter.MarkerSize = 5;
+
+        plt.Title(title);
+        plt.XLabel(xLabel);
+        plt.YLabel(yLabel);
+
+        plt.SavePng(path, width, height);
+    }
 }

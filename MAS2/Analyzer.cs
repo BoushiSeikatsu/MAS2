@@ -337,5 +337,258 @@ namespace MAS2
 
             return maxComponentSize;
         }
+
+        /// <summary>
+        /// Computes the in-degree of each node.
+        /// </summary>
+        public (int[] inDegrees, TimeSpan duration) GetInDegrees()
+        {
+            var stopwatch = Stopwatch.StartNew();
+            var inDegrees = new int[_nodeCount];
+            var elements = _matrix.GetType().GetField("_elements", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(_matrix) as Dictionary<MatrixKey, T>;
+            
+            foreach (var kvp in elements)
+            {
+                inDegrees[kvp.Key.Column]++;
+            }
+            stopwatch.Stop();
+            return (inDegrees, stopwatch.Elapsed);
+        }
+
+        /// <summary>
+        /// Calculates PageRank for the directed graph.
+        /// </summary>
+        public Dictionary<int, double> CalculatePageRank(double dampingFactor = 0.85, int iterations = 20)
+        {
+            // Initialize PageRank
+            var pageRank = new Dictionary<int, double>();
+            var elements = _matrix.GetType().GetField("_elements", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(_matrix) as Dictionary<MatrixKey, T>;
+            
+            // Identify all nodes involved in edges
+            var nodes = new HashSet<int>();
+            foreach (var kvp in elements)
+            {
+                nodes.Add(kvp.Key.Row);
+                nodes.Add(kvp.Key.Column);
+            }
+            
+            int N = nodes.Count;
+            if (N == 0) return pageRank;
+
+            double initialRank = 1.0 / N;
+            foreach (var node in nodes) pageRank[node] = initialRank;
+
+            // Precompute out-degrees
+            var outDegrees = new Dictionary<int, int>();
+            foreach (var kvp in elements)
+            {
+                if (!outDegrees.ContainsKey(kvp.Key.Row)) outDegrees[kvp.Key.Row] = 0;
+                outDegrees[kvp.Key.Row]++;
+            }
+
+            // Precompute incoming edges for faster iteration: v -> list of u where u -> v
+            var incomingEdges = new Dictionary<int, List<int>>();
+            foreach (var node in nodes) incomingEdges[node] = new List<int>();
+            foreach (var kvp in elements)
+            {
+                incomingEdges[kvp.Key.Column].Add(kvp.Key.Row);
+            }
+
+            // Iterations
+            for (int iter = 0; iter < iterations; iter++)
+            {
+                var newPageRank = new Dictionary<int, double>();
+                double danglingRankSum = 0;
+
+                // Calculate sum of PR from dangling nodes (nodes with no out-edges)
+                foreach (var node in nodes)
+                {
+                    if (!outDegrees.ContainsKey(node) || outDegrees[node] == 0)
+                    {
+                        danglingRankSum += pageRank[node];
+                    }
+                }
+
+                foreach (var node in nodes)
+                {
+                    double rankSum = 0;
+                    if (incomingEdges.TryGetValue(node, out var sources))
+                    {
+                        foreach (var source in sources)
+                        {
+                            rankSum += pageRank[source] / outDegrees[source];
+                        }
+                    }
+                    
+                    // PageRank formula with dangling node adjustment
+                    newPageRank[node] = (1 - dampingFactor) / N + dampingFactor * (rankSum + danglingRankSum / N);
+                }
+                pageRank = newPageRank;
+            }
+
+            return pageRank;
+        }
+
+        /// <summary>
+        /// Calculates HITS (Hubs and Authorities) scores.
+        /// </summary>
+        public (Dictionary<int, double> hubs, Dictionary<int, double> authorities) CalculateHITS(int iterations = 20)
+        {
+            var hubs = new Dictionary<int, double>();
+            var authorities = new Dictionary<int, double>();
+            
+            var elements = _matrix.GetType().GetField("_elements", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(_matrix) as Dictionary<MatrixKey, T>;
+            
+            var nodes = new HashSet<int>();
+            foreach (var kvp in elements)
+            {
+                nodes.Add(kvp.Key.Row);
+                nodes.Add(kvp.Key.Column);
+            }
+
+            // Initialize with 1
+            foreach (var node in nodes)
+            {
+                hubs[node] = 1.0;
+                authorities[node] = 1.0;
+            }
+
+            // Precompute graph structure
+            var outEdges = new Dictionary<int, List<int>>(); // u -> v
+            var inEdges = new Dictionary<int, List<int>>();  // v -> u
+            
+            foreach (var kvp in elements)
+            {
+                int u = kvp.Key.Row;
+                int v = kvp.Key.Column;
+                
+                if (!outEdges.ContainsKey(u)) outEdges[u] = new List<int>();
+                outEdges[u].Add(v);
+                
+                if (!inEdges.ContainsKey(v)) inEdges[v] = new List<int>();
+                inEdges[v].Add(u);
+            }
+
+            for (int iter = 0; iter < iterations; iter++)
+            {
+                // Update Authorities: sum of Hub scores of pointing nodes
+                double normAuth = 0;
+                var newAuthorities = new Dictionary<int, double>();
+                foreach (var node in nodes)
+                {
+                    double sum = 0;
+                    if (inEdges.TryGetValue(node, out var incoming))
+                    {
+                        foreach (var u in incoming)
+                        {
+                            sum += hubs[u];
+                        }
+                    }
+                    newAuthorities[node] = sum;
+                    normAuth += sum * sum;
+                }
+                normAuth = Math.Sqrt(normAuth);
+                foreach (var node in nodes) authorities[node] = newAuthorities[node] / normAuth;
+
+                // Update Hubs: sum of Authority scores of pointed-to nodes
+                double normHub = 0;
+                var newHubs = new Dictionary<int, double>();
+                foreach (var node in nodes)
+                {
+                    double sum = 0;
+                    if (outEdges.TryGetValue(node, out var outgoing))
+                    {
+                        foreach (var v in outgoing)
+                        {
+                            sum += authorities[v];
+                        }
+                    }
+                    newHubs[node] = sum;
+                    normHub += sum * sum;
+                }
+                normHub = Math.Sqrt(normHub);
+                foreach (var node in nodes) hubs[node] = newHubs[node] / normHub;
+            }
+
+            return (hubs, authorities);
+        }
+
+        /// <summary>
+        /// Calculates the reciprocity of the directed graph.
+        /// Reciprocity = (Number of mutual edges) / (Total number of edges)
+        /// </summary>
+        public double CalculateReciprocity()
+        {
+            var elements = _matrix.GetType().GetField("_elements", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(_matrix) as Dictionary<MatrixKey, T>;
+            
+            int mutualEdges = 0;
+            int totalEdges = elements.Count;
+
+            foreach (var kvp in elements)
+            {
+                int u = kvp.Key.Row;
+                int v = kvp.Key.Column;
+                
+                // Check if v -> u exists
+                if (elements.ContainsKey(new MatrixKey(v, u)))
+                {
+                    mutualEdges++;
+                }
+            }
+
+            // mutualEdges counts (u,v) and (v,u) separately, so it's the correct count of edges involved in reciprocity.
+            return totalEdges > 0 ? (double)mutualEdges / totalEdges : 0.0;
+        }
+
+        /// <summary>
+        /// Computes the number of connected components.
+        /// </summary>
+        /// <returns>The number of connected components.</returns>
+        public int GetConnectedComponentsCount()
+        {
+            var visited = new HashSet<int>();
+            int componentCount = 0;
+
+            // Build adjacency list for traversal
+            var adj = new Dictionary<int, List<int>>();
+            var elements = _matrix.GetType().GetField("_elements", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(_matrix) as Dictionary<MatrixKey, T>;
+            
+            foreach (var kvp in elements)
+            {
+                int u = kvp.Key.Row;
+                int v = kvp.Key.Column;
+                if (!adj.ContainsKey(u)) adj[u] = new List<int>();
+                adj[u].Add(v);
+            }
+
+            // Iterate over all nodes
+            for (int i = 0; i < _nodeCount; i++)
+            {
+                if (!visited.Contains(i))
+                {
+                    componentCount++;
+                    var stack = new Stack<int>();
+                    stack.Push(i);
+                    visited.Add(i);
+
+                    while (stack.Count > 0)
+                    {
+                        int u = stack.Pop();
+                        if (adj.TryGetValue(u, out var neighbors))
+                        {
+                            foreach (var v in neighbors)
+                            {
+                                if (!visited.Contains(v))
+                                {
+                                    visited.Add(v);
+                                    stack.Push(v);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return componentCount;
+        }
     }
 }
